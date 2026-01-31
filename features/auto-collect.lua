@@ -237,7 +237,7 @@ end
 
 -- ============================================================================
 -- collectFromPet(pet)
--- Try to collect money from a pet by touching/clicking it
+-- Try to collect money from a pet by various methods
 -- ============================================================================
 local function collectFromPet(pet)
     if not pet then return false end
@@ -245,27 +245,63 @@ local function collectFromPet(pet)
     local player = Players.LocalPlayer
     local character = player and player.Character
     local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
     
-    -- Method 1: Fire ProximityPrompt
+    debugLog("[AutoCollect] Trying to collect from: " .. pet.Name)
+    
+    -- Method 1: Fire PetRE or ResourceRE with pet info
     local success1, result1 = pcall(function()
-        for _, desc in ipairs(pet:GetDescendants()) do
-            if desc:IsA("ProximityPrompt") then
-                if fireproximityprompt then
-                    fireproximityprompt(desc)
-                    return true
+        local remotes = {
+            ReplicatedStorage:FindFirstChild("PetRE"),
+            ReplicatedStorage:FindFirstChild("ResourceRE"),
+        }
+        
+        -- Also search in subfolders
+        for _, child in ipairs(ReplicatedStorage:GetChildren()) do
+            if child:IsA("Folder") then
+                local petRE = child:FindFirstChild("PetRE")
+                local resRE = child:FindFirstChild("ResourceRE")
+                if petRE then table.insert(remotes, petRE) end
+                if resRE then table.insert(remotes, resRE) end
+            end
+        end
+        
+        for _, remote in ipairs(remotes) do
+            if remote and remote:IsA("RemoteEvent") then
+                -- Try different argument patterns
+                -- Pattern 1: "Collect" action with pet
+                pcall(function() remote:FireServer("Collect", pet) end)
+                pcall(function() remote:FireServer("CollectMoney", pet) end)
+                pcall(function() remote:FireServer("Claim", pet) end)
+                
+                -- Pattern 2: Just pet reference
+                pcall(function() remote:FireServer(pet) end)
+                
+                -- Pattern 3: Pet name or ID
+                pcall(function() remote:FireServer(pet.Name) end)
+                local petId = pet:GetAttribute("Id") or pet:GetAttribute("PetId") or pet:GetAttribute("UUID")
+                if petId then
+                    pcall(function() remote:FireServer(petId) end)
+                    pcall(function() remote:FireServer("Collect", petId) end)
                 end
+                
+                return true
             end
         end
         return false
     end)
-    if success1 and result1 then return true end
+    if success1 and result1 then 
+        debugLog("[AutoCollect] Fired remote for: " .. pet.Name)
+        return true 
+    end
     
-    -- Method 2: Fire ClickDetector
+    -- Method 2: Fire ProximityPrompt
     local success2, result2 = pcall(function()
         for _, desc in ipairs(pet:GetDescendants()) do
-            if desc:IsA("ClickDetector") then
-                if fireclickdetector then
-                    fireclickdetector(desc)
+            if desc:IsA("ProximityPrompt") then
+                if fireproximityprompt then
+                    fireproximityprompt(desc)
+                    debugLog("[AutoCollect] Fired ProximityPrompt")
                     return true
                 end
             end
@@ -274,35 +310,39 @@ local function collectFromPet(pet)
     end)
     if success2 and result2 then return true end
     
-    -- Method 3: Fire touch interest on pet's parts
+    -- Method 3: Fire ClickDetector
+    local success3, result3 = pcall(function()
+        for _, desc in ipairs(pet:GetDescendants()) do
+            if desc:IsA("ClickDetector") then
+                if fireclickdetector then
+                    fireclickdetector(desc)
+                    debugLog("[AutoCollect] Fired ClickDetector")
+                    return true
+                end
+            end
+        end
+        return false
+    end)
+    if success3 and result3 then return true end
+    
+    -- Method 4: Fire touch interest
     if rootPart and firetouchinterest then
-        local success3, result3 = pcall(function()
+        local success4, result4 = pcall(function()
             for _, desc in ipairs(pet:GetDescendants()) do
                 if desc:IsA("BasePart") then
-                    firetouchinterest(rootPart, desc, 0) -- Touch begin
+                    firetouchinterest(rootPart, desc, 0)
                     task.wait(0.05)
-                    firetouchinterest(rootPart, desc, 1) -- Touch end
+                    firetouchinterest(rootPart, desc, 1)
+                    debugLog("[AutoCollect] Fired touch on: " .. desc.Name)
                     return true
                 end
             end
             return false
         end)
-        if success3 and result3 then return true end
+        if success4 and result4 then return true end
     end
     
-    -- Method 4: Try to click on pet's PrimaryPart
-    local success4, result4 = pcall(function()
-        local primary = pet.PrimaryPart or pet:FindFirstChildWhichIsA("BasePart")
-        if primary and rootPart and firetouchinterest then
-            firetouchinterest(rootPart, primary, 0)
-            task.wait(0.05)
-            firetouchinterest(rootPart, primary, 1)
-            return true
-        end
-        return false
-    end)
-    if success4 and result4 then return true end
-    
+    debugLog("[AutoCollect] All methods failed for: " .. pet.Name)
     return false
 end
 
