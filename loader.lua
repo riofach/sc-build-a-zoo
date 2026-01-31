@@ -60,18 +60,41 @@ else
     warn("[Loader] Failed to load core/init")
 end
 
--- Lazy-load features via metatable (prevents timeout)
-local Features = setmetatable({}, {
-    __index = function(t, key)
-        print("[Loader] Lazy loading feature: " .. key)
-        local module = loadModule("features/" .. key)
-        t[key] = module
-        return module
-    end
-})
+-- Load feature modules (explicit, not lazy)
+local AutoCollect = loadModule("features/auto-collect")
+local EggSystem = loadModule("features/egg-system")
 
--- UI placeholder (loaded in Phase 4)
+-- Create Features table untuk UI
+local Features = {
+    ["auto-collect"] = AutoCollect,
+    ["egg-system"] = EggSystem,
+}
+
+-- Load UI modules
+local StatsTracker = loadModule("ui/stats-tracker")
+local UIMain = loadModule("ui/main")
+
+-- Expose StatsTracker globally untuk feature callbacks
+_G.StatsTracker = StatsTracker
+
+-- Initialize UI last (after feature modules ready)
 local UI = nil
+if UIMain and UIMain.init then
+    local success, err = pcall(function()
+        UIMain.init({
+            Features = Features,
+            StatsTracker = StatsTracker,
+        })
+    end)
+    if success then
+        print("[Loader] UI initialized")
+        UI = UIMain
+    else
+        warn("[Loader] UI init failed: " .. tostring(err))
+    end
+else
+    warn("[Loader] UI module not available")
+end
 
 if Core then
     print("[Loader] Build A Zoo Script loaded successfully!")
