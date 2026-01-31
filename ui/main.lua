@@ -332,14 +332,109 @@ local function startStatsLoop()
 end
 
 -- ============================================================================
--- Tab: Settings
+-- Tab: Settings - Debug Log
 -- ============================================================================
 
--- Placeholder for future Discord webhook settings
-TabSettings:CreateParagraph({
-    Title = "Settings",
-    Content = "Discord webhook settings akan ditambahkan di Phase 5."
+-- Debug log storage
+local DebugLogs = {}
+local MaxLogs = 20
+
+-- Global function to add debug log (accessible from other modules)
+local function addDebugLog(message)
+    table.insert(DebugLogs, 1, os.date("%H:%M:%S") .. " " .. tostring(message))
+    if #DebugLogs > MaxLogs then
+        table.remove(DebugLogs)
+    end
+end
+
+-- Expose globally for other modules
+_G.DebugLog = addDebugLog
+
+-- Debug Paragraph
+local DebugParagraph = TabSettings:CreateParagraph({
+    Title = "Debug Log",
+    Content = "Waiting for logs..."
 })
+
+UI._elements.DebugParagraph = DebugParagraph
+
+-- Manual Discovery Button
+TabSettings:CreateButton({
+    Name = "Run Discovery (Debug)",
+    Callback = function()
+        addDebugLog("Running discovery...")
+        
+        -- Try to run discovery manually
+        local success, result = pcall(function()
+            if UI._features and UI._features["auto-collect"] then
+                local discovery = UI._features["auto-collect"].getDiscovery()
+                if discovery then
+                    addDebugLog("Player folder: " .. (discovery.playerFolder and discovery.playerFolder.Name or "NOT FOUND"))
+                    addDebugLog("Animals: " .. (discovery.animalCount or 0))
+                    addDebugLog("Remote: " .. (discovery.collectRemote and discovery.collectRemote.Name or "NOT FOUND"))
+                else
+                    addDebugLog("Discovery not run yet, initializing...")
+                    UI._features["auto-collect"].init()
+                    local disc2 = UI._features["auto-collect"].getDiscovery()
+                    if disc2 then
+                        addDebugLog("Player folder: " .. (disc2.playerFolder and disc2.playerFolder.Name or "NOT FOUND"))
+                        addDebugLog("Animals: " .. (disc2.animalCount or 0))
+                        addDebugLog("Remote: " .. (disc2.collectRemote and disc2.collectRemote.Name or "NOT FOUND"))
+                    end
+                end
+            else
+                addDebugLog("auto-collect module not loaded")
+            end
+        end)
+        
+        if not success then
+            addDebugLog("Error: " .. tostring(result))
+        end
+    end
+})
+
+-- Run Once Button
+TabSettings:CreateButton({
+    Name = "Collect Once (Test)",
+    Callback = function()
+        addDebugLog("Running single collect cycle...")
+        
+        local success, result = pcall(function()
+            if UI._features and UI._features["auto-collect"] then
+                local ok = UI._features["auto-collect"].runOnce()
+                if ok then
+                    addDebugLog("Collect cycle completed")
+                    local stats = UI._features["auto-collect"].getStats()
+                    if stats then
+                        addDebugLog("Collected: " .. (stats.totalCollected or 0) .. ", Failed: " .. (stats.totalFailed or 0))
+                    end
+                else
+                    addDebugLog("Collect cycle failed")
+                end
+            else
+                addDebugLog("auto-collect module not loaded")
+            end
+        end)
+        
+        if not success then
+            addDebugLog("Error: " .. tostring(result))
+        end
+    end
+})
+
+-- Debug log update loop
+local debugThread = task.spawn(function()
+    while true do
+        if #DebugLogs > 0 then
+            DebugParagraph:Set({
+                Title = "Debug Log (" .. #DebugLogs .. ")",
+                Content = table.concat(DebugLogs, "\n")
+            })
+        end
+        task.wait(1)
+    end
+end)
+table.insert(UI._threads, debugThread)
 
 -- ============================================================================
 -- Tab: About

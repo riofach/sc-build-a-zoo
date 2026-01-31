@@ -116,17 +116,29 @@ local AutoCollect = {
 }
 
 -- ============================================================================
+-- Helper: Debug log to UI
+-- ============================================================================
+local function debugLog(message)
+    print(message)
+    if _G.DebugLog then
+        pcall(function()
+            _G.DebugLog(message)
+        end)
+    end
+end
+
+-- ============================================================================
 -- init()
 -- Initialize the auto-collect module by running game discovery
 -- Returns: boolean (success)
 -- ============================================================================
 function AutoCollect:init()
-    print("[AutoCollect] Initializing...")
+    debugLog("[AutoCollect] Initializing...")
     
     -- Load dependencies first
     local depsLoaded = loadDependencies()
     if not depsLoaded then
-        warn("[AutoCollect] Failed to load Discovery module")
+        debugLog("[AutoCollect] Failed to load Discovery module")
         return false
     end
     
@@ -136,7 +148,7 @@ function AutoCollect:init()
     end)
     
     if not success then
-        warn("[AutoCollect] Discovery failed: " .. tostring(result))
+        debugLog("[AutoCollect] Discovery failed: " .. tostring(result))
         return false
     end
     
@@ -144,13 +156,12 @@ function AutoCollect:init()
     
     -- Validate we found player folder
     if not self._discovery.playerFolder then
-        warn("[AutoCollect] Player folder not found - cannot auto-collect")
+        debugLog("[AutoCollect] Player folder not found")
         return false
     end
     
-    print("[AutoCollect] Initialized successfully")
-    print("[AutoCollect] - Animals found: " .. (self._discovery.animalCount or 0))
-    print("[AutoCollect] - Collect remote: " .. (self._discovery.collectRemote and self._discovery.collectRemote.Name or "NOT FOUND"))
+    debugLog("[AutoCollect] Init OK - Animals: " .. (self._discovery.animalCount or 0))
+    debugLog("[AutoCollect] Remote: " .. (self._discovery.collectRemote and self._discovery.collectRemote.Name or "NOT FOUND"))
     
     return true
 end
@@ -503,16 +514,17 @@ function AutoCollect:collectCycle()
     if success and result then
         animals = result
     else
-        warn("[AutoCollect] Failed to get animals: " .. tostring(result))
+        debugLog("[AutoCollect] Failed to get animals: " .. tostring(result))
         return
     end
     
-    print("[AutoCollect] Starting cycle with " .. #animals .. " animals")
+    debugLog("[AutoCollect] Cycle: " .. #animals .. " animals found")
     
+    local readyCount = 0
     for i, animal in ipairs(animals) do
         -- Check if still active
         if not self._active then
-            print("[AutoCollect] Cycle interrupted - stopping")
+            debugLog("[AutoCollect] Cycle interrupted")
             break
         end
         
@@ -531,6 +543,7 @@ function AutoCollect:collectCycle()
         end
         
         if ready then
+            readyCount = readyCount + 1
             -- Try to collect
             local collectSuccess = self:collectFromAnimal(animal)
             if collectSuccess then
@@ -545,6 +558,8 @@ function AutoCollect:collectCycle()
             Timing.wait(self._config.delayPerAnimal)
         end
     end
+    
+    debugLog("[AutoCollect] Ready: " .. readyCount .. ", Collected: " .. collected .. ", Failed: " .. failed)
     
     -- Update stats
     local cycleTime = tick() - cycleStart
