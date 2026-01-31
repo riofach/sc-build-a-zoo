@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2025-01-31)
 
 **Core value:** Auto-egg system yang berjalan end-to-end — dari buy egg sampai collect money, tanpa perlu intervensi manual
-**Current focus:** Phase 3 - Egg System
+**Current focus:** Phase 3 - Egg System (Complete)
 
 ## Current Position
 
 Phase: 3 of 5 (Egg System)
-Plan: 1 of 3 in current phase
-Status: In progress
-Last activity: 2026-01-31 — Completed 03-01-PLAN.md
+Plan: 3 of 3 in current phase
+Status: Phase complete
+Last activity: 2026-01-31 — Completed 03-03-PLAN.md
 
-Progress: [█████░░░░░] 50%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
+- Total plans completed: 8
 - Average duration: 4min
-- Total execution time: 18min
+- Total execution time: 32min
 
 **By Phase:**
 
@@ -29,10 +29,10 @@ Progress: [█████░░░░░] 50%
 |-------|-------|-------|----------|
 | 01-foundation | 2 | 8min | 4min |
 | 02-auto-collect | 2 | 6min | 3min |
-| 03-egg-system | 1 | 4min | 4min |
+| 03-egg-system | 3 | 14min | 5min |
 
 **Recent Trend:**
-- Last 5 plans: 01-02 (3min), 02-01 (2min), 02-02 (4min), 03-01 (4min)
+- Last 5 plans: 02-02 (4min), 03-01 (4min), 03-02 (4min), 03-03 (6min)
 - Trend: Stable
 
 *Updated after each plan completion*
@@ -72,6 +72,14 @@ Recent decisions affecting current work:
 - [03-01]: Case-insensitive lookup with cache for O(1) access
 - [03-01]: 3-tier money detection (leaderstats, attributes, GUI)
 - [03-01]: 10 common currency names for detection
+- [03-02]: DescendantAdded for real-time detection (not polling)
+- [03-02]: 3 mandatory pre-checks before any remote fire
+- [03-02]: 4 argument patterns for buy remote compatibility
+- [03-02]: StreamingEnabled compatibility with WaitForChild timeout
+- [03-03]: 8 plot folder patterns for player plots discovery
+- [03-03]: 3 methods for empty plot detection (ProximityPrompt, child absence, attributes)
+- [03-03]: 4 methods for ready egg detection (attribute, prompt, visual, highlight)
+- [03-03]: State machine prioritizes hatching over buying
 
 ### Pending Todos
 
@@ -84,8 +92,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-31 15:51
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-01-31 19:20
+Stopped at: Completed 03-03-PLAN.md (Phase 3 Complete)
 Resume file: None
 
 ---
