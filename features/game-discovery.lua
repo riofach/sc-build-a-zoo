@@ -210,7 +210,201 @@ local function findPlayerAnimals()
     return animals
 end
 
+-- ============================================================================
+-- isMoneyReady(animal)
+-- Checks if an animal has money ready to collect
+-- Returns: boolean (ready), number (amount, can be 0)
+-- ============================================================================
+local function isMoneyReady(animal)
+    if not animal then
+        return false, 0
+    end
+    
+    local amount = 0
+    
+    -- Pattern 1: NumberValue/IntValue child with money-related names
+    local moneyValueNames = {"Money", "Cash", "Coins", "CollectableMoney", "ReadyMoney", "Income"}
+    for _, valueName in ipairs(moneyValueNames) do
+        local success, result = pcall(function()
+            local valueObj = animal:FindFirstChild(valueName)
+            if valueObj and (valueObj:IsA("NumberValue") or valueObj:IsA("IntValue")) then
+                return valueObj.Value
+            end
+            return nil
+        end)
+        
+        if success and result and result > 0 then
+            return true, result
+        end
+    end
+    
+    -- Pattern 2: Attributes with money values
+    local moneyAttrs = {"Money", "CollectableMoney", "ReadyMoney", "Cash", "Coins", "Income"}
+    for _, attrName in ipairs(moneyAttrs) do
+        local success, result = pcall(function()
+            return animal:GetAttribute(attrName)
+        end)
+        
+        if success and type(result) == "number" and result > 0 then
+            return true, result
+        end
+    end
+    
+    -- Pattern 3: BillboardGui enabled (visual money indicator)
+    local success3, hasBillboard = pcall(function()
+        for _, child in ipairs(animal:GetChildren()) do
+            if child:IsA("BillboardGui") and child.Enabled then
+                -- Check if it has money-related content
+                local label = child:FindFirstChildOfClass("TextLabel")
+                if label and label.Text and (
+                    string.find(label.Text, "$", 1, true) or
+                    string.find(label.Text, "Collect", 1, true) or
+                    string.find(label.Text, "Ready", 1, true)
+                ) then
+                    return true
+                end
+            end
+        end
+        return false
+    end)
+    
+    if success3 and hasBillboard then
+        return true, amount
+    end
+    
+    -- Pattern 4: Part child with money indicator names
+    local indicatorNames = {"MoneyDrop", "CoinDrop", "MoneyIndicator", "CashDrop", "CollectIndicator"}
+    for _, indicatorName in ipairs(indicatorNames) do
+        local success, result = pcall(function()
+            local indicator = animal:FindFirstChild(indicatorName)
+            if indicator and indicator:IsA("BasePart") then
+                return indicator.Transparency < 1 -- Visible = money ready
+            end
+            return false
+        end)
+        
+        if success and result then
+            return true, amount
+        end
+    end
+    
+    return false, 0
+end
+
+-- ============================================================================
+-- findCollectRemote()
+-- Finds RemoteEvent/RemoteFunction for collecting money
+-- Returns: Instance or nil
+-- ============================================================================
+local function findCollectRemote()
+    local services = getServices()
+    
+    if not services.ReplicatedStorage then
+        warn("[Discovery] ReplicatedStorage not available")
+        return nil
+    end
+    
+    -- Patterns to search for (ordered by likelihood)
+    local remotePatterns = {
+        "Collect", "CollectMoney", "CollectCash", "CollectAll", "CollectAnimalMoney",
+        "Claim", "ClaimMoney", "ClaimReward", "ClaimAll", "ClaimAnimal",
+        "GatherMoney", "PickupMoney", "GetMoney", "TakeMoney",
+        "AnimalCollect", "ZooCollect", "MoneyCollect"
+    }
+    
+    -- Get all descendants of ReplicatedStorage
+    local success, descendants = pcall(function()
+        return services.ReplicatedStorage:GetDescendants()
+    end)
+    
+    if not success then
+        warn("[Discovery] Failed to get ReplicatedStorage descendants: " .. tostring(descendants))
+        return nil
+    end
+    
+    -- Log all RemoteEvents/RemoteFunctions for debugging
+    local foundRemotes = {}
+    for _, descendant in ipairs(descendants) do
+        local isRemote = descendant:IsA("RemoteEvent") or descendant:IsA("RemoteFunction")
+        if isRemote then
+            table.insert(foundRemotes, descendant.Name)
+        end
+    end
+    
+    if #foundRemotes > 0 then
+        print("[Discovery] Found remotes in ReplicatedStorage: " .. table.concat(foundRemotes, ", "))
+    else
+        print("[Discovery] No remotes found in ReplicatedStorage")
+    end
+    
+    -- Search for matching pattern
+    for _, pattern in ipairs(remotePatterns) do
+        for _, descendant in ipairs(descendants) do
+            local isRemote = descendant:IsA("RemoteEvent") or descendant:IsA("RemoteFunction")
+            if isRemote then
+                local success, matches = pcall(function()
+                    -- Exact match or contains pattern
+                    return descendant.Name == pattern or 
+                           string.find(descendant.Name, pattern, 1, true) ~= nil
+                end)
+                
+                if success and matches then
+                    print("[Discovery] Found collect remote: " .. descendant.Name .. " (" .. descendant.ClassName .. ")")
+                    return descendant
+                end
+            end
+        end
+    end
+    
+    warn("[Discovery] Could not find collect remote using any known pattern")
+    return nil
+end
+
+-- ============================================================================
+-- discoverGameStructure()
+-- Aggregates all discovery results into a single object
+-- Returns: table with discovery results
+-- ============================================================================
+local function discoverGameStructure()
+    print("[Discovery] === Starting Game Structure Discovery ===")
+    
+    local playerFolder = findPlayerFolder()
+    local collectRemote = findCollectRemote()
+    local animals = findPlayerAnimals()
+    
+    local result = {
+        playerFolder = playerFolder,
+        collectRemote = collectRemote,
+        animalCount = #animals,
+        animals = animals
+    }
+    
+    -- Print summary
+    print("[Discovery] === Discovery Summary ===")
+    print("[Discovery] Player folder: " .. (playerFolder and playerFolder:GetFullName() or "NOT FOUND"))
+    print("[Discovery] Collect remote: " .. (collectRemote and collectRemote.Name or "NOT FOUND"))
+    print("[Discovery] Animal count: " .. result.animalCount)
+    
+    -- Check money ready status for each animal
+    local readyCount = 0
+    for _, animal in ipairs(animals) do
+        local ready, amount = isMoneyReady(animal)
+        if ready then
+            readyCount = readyCount + 1
+        end
+    end
+    print("[Discovery] Animals with money ready: " .. readyCount)
+    result.readyCount = readyCount
+    
+    print("[Discovery] === Discovery Complete ===")
+    
+    return result
+end
+
 Discovery.findPlayerFolder = findPlayerFolder
 Discovery.findPlayerAnimals = findPlayerAnimals
+Discovery.isMoneyReady = isMoneyReady
+Discovery.findCollectRemote = findCollectRemote
+Discovery.discoverGameStructure = discoverGameStructure
 
 return Discovery
