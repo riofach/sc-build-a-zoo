@@ -2,13 +2,13 @@
   features/auto-collect.lua
   Auto-collect money from pets in Build A Zoo
   
-  Simplified version - directly fires "Collect all pets" remote
+  Method: Touch/click pets that have money ready ($ indicator above them)
   
   Usage:
     local AutoCollect = require("features/auto-collect")
     AutoCollect.init()
-    AutoCollect.start()  -- starts collection loop
-    AutoCollect.stop()   -- stops collection loop
+    AutoCollect.start()
+    AutoCollect.stop()
 --]]
 
 -- ============================================================================
@@ -27,7 +27,7 @@ end
 -- Services
 -- ============================================================================
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 -- ============================================================================
 -- Module State
@@ -35,171 +35,224 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AutoCollect = {
     _active = false,
     _thread = nil,
-    _collectRemote = nil,
+    _playerFolder = nil,
     _stats = {
         cyclesCompleted = 0,
         totalCollected = 0,
         totalFailed = 0,
     },
     _config = {
-        cycleInterval = 5,  -- collect every 5 seconds
+        cycleInterval = 3,  -- collect every 3 seconds
+        delayPerPet = 0.3,  -- delay between pets
     },
 }
 
 -- ============================================================================
--- findCollectRemote()
--- Find the remote for collecting all pets money
+-- findPlayerFolder()
+-- Find the player's zoo/pets folder in Workspace
 -- ============================================================================
-local function findCollectRemote()
-    debugLog("[AutoCollect] Searching for collect remote...")
+local function findPlayerFolder()
+    local player = Players.LocalPlayer
+    if not player then return nil end
     
-    -- Common remote names for "Collect all pets" functionality
-    local remotePatterns = {
-        -- Exact matches first
-        "CollectAll", "CollectAllPets", "CollectPets", "CollectMoney",
-        "ClaimAll", "ClaimAllPets", "ClaimPets", "ClaimMoney",
-        "Collect", "Claim", "GetMoney", "GatherMoney",
-        -- Partial matches
-        "collect", "claim", "money", "pet", "gold", "cash"
+    local playerName = player.Name
+    local userId = tostring(player.UserId)
+    
+    debugLog("[AutoCollect] Looking for player folder: " .. playerName)
+    
+    -- Search patterns
+    local searchLocations = {
+        -- Direct in Workspace
+        {parent = Workspace, name = playerName},
+        {parent = Workspace, name = userId},
+        -- Common folder structures
+        {parent = Workspace, child = "Zoos", name = playerName},
+        {parent = Workspace, child = "Zoos", name = userId},
+        {parent = Workspace, child = "PlayerZoos", name = playerName},
+        {parent = Workspace, child = "Players", name = playerName},
+        {parent = Workspace, child = "PlayerAreas", name = playerName},
     }
     
-    -- Search in ReplicatedStorage
-    local locations = {
-        ReplicatedStorage,
-        ReplicatedStorage:FindFirstChild("Remotes"),
-        ReplicatedStorage:FindFirstChild("Events"),
-        ReplicatedStorage:FindFirstChild("RemoteEvents"),
-        ReplicatedStorage:FindFirstChild("Network"),
-    }
-    
-    for _, location in ipairs(locations) do
-        if location then
-            local success, descendants = pcall(function()
-                return location:GetDescendants()
-            end)
-            
-            if success then
-                -- Log all remotes found
-                local remoteNames = {}
-                for _, desc in ipairs(descendants) do
-                    if desc:IsA("RemoteEvent") or desc:IsA("RemoteFunction") then
-                        table.insert(remoteNames, desc.Name)
-                    end
-                end
-                if #remoteNames > 0 then
-                    debugLog("[AutoCollect] Found remotes: " .. table.concat(remoteNames, ", "))
-                end
-                
-                -- Search for matching remote
-                for _, pattern in ipairs(remotePatterns) do
-                    for _, desc in ipairs(descendants) do
-                        if desc:IsA("RemoteEvent") or desc:IsA("RemoteFunction") then
-                            local name = desc.Name:lower()
-                            if name == pattern:lower() or string.find(name, pattern:lower()) then
-                                debugLog("[AutoCollect] Found remote: " .. desc.Name)
-                                return desc
-                            end
-                        end
-                    end
-                end
+    for _, loc in ipairs(searchLocations) do
+        local success, result = pcall(function()
+            local searchIn = loc.parent
+            if loc.child then
+                searchIn = loc.parent:FindFirstChild(loc.child)
+                if not searchIn then return nil end
             end
+            return searchIn:FindFirstChild(loc.name)
+        end)
+        
+        if success and result then
+            debugLog("[AutoCollect] Found player folder: " .. result:GetFullName())
+            return result
         end
     end
     
-    debugLog("[AutoCollect] No collect remote found")
+    -- Fallback: search all folders in Workspace for player name
+    local success, result = pcall(function()
+        for _, child in ipairs(Workspace:GetChildren()) do
+            if child:IsA("Folder") or child:IsA("Model") then
+                local playerFolder = child:FindFirstChild(playerName)
+                if playerFolder then
+                    return playerFolder
+                end
+            end
+        end
+        return nil
+    end)
+    
+    if success and result then
+        debugLog("[AutoCollect] Found player folder (fallback): " .. result:GetFullName())
+        return result
+    end
+    
+    debugLog("[AutoCollect] Player folder NOT FOUND")
     return nil
 end
 
 -- ============================================================================
--- tryCollectViaRemote()
--- Try different ways to fire the collect remote
+-- findPetsWithMoney()
+-- Find all pets that have money ready to collect
 -- ============================================================================
-local function tryCollectViaRemote(remote)
-    if not remote then return false end
+local function findPetsWithMoney()
+    local pets = {}
+    local player = Players.LocalPlayer
+    if not player then return pets end
     
-    local patterns = {
-        -- Pattern 1: No arguments
-        function()
-            if remote:IsA("RemoteEvent") then
-                remote:FireServer()
-            else
-                remote:InvokeServer()
-            end
-            return true
-        end,
-        -- Pattern 2: "All" argument
-        function()
-            if remote:IsA("RemoteEvent") then
-                remote:FireServer("All")
-            else
-                remote:InvokeServer("All")
-            end
-            return true
-        end,
-        -- Pattern 3: true argument
-        function()
-            if remote:IsA("RemoteEvent") then
-                remote:FireServer(true)
-            else
-                remote:InvokeServer(true)
-            end
-            return true
-        end,
+    -- Search in player folder first
+    local searchLocations = {}
+    
+    if AutoCollect._playerFolder then
+        table.insert(searchLocations, AutoCollect._playerFolder)
+    end
+    
+    -- Also search common pet locations
+    local commonPetFolders = {
+        Workspace:FindFirstChild("Pets"),
+        Workspace:FindFirstChild("Animals"),
+        Workspace:FindFirstChild("PlayerPets"),
     }
     
-    for i, tryPattern in ipairs(patterns) do
-        local success = pcall(tryPattern)
-        if success then
-            return true
+    for _, folder in ipairs(commonPetFolders) do
+        if folder then
+            table.insert(searchLocations, folder)
         end
     end
     
-    return false
+    -- If no specific folders, search entire Workspace (slower)
+    if #searchLocations == 0 then
+        table.insert(searchLocations, Workspace)
+    end
+    
+    for _, location in ipairs(searchLocations) do
+        local success, descendants = pcall(function()
+            return location:GetDescendants()
+        end)
+        
+        if success then
+            for _, desc in ipairs(descendants) do
+                -- Check if it's a Model (pet)
+                if desc:IsA("Model") then
+                    -- Check for money indicator (BillboardGui with $ text)
+                    local hasMoney = false
+                    
+                    pcall(function()
+                        for _, child in ipairs(desc:GetDescendants()) do
+                            if child:IsA("BillboardGui") then
+                                for _, guiChild in ipairs(child:GetDescendants()) do
+                                    if guiChild:IsA("TextLabel") and guiChild.Visible then
+                                        local text = guiChild.Text or ""
+                                        if string.find(text, "$") then
+                                            hasMoney = true
+                                            return
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end)
+                    
+                    if hasMoney then
+                        table.insert(pets, desc)
+                    end
+                end
+            end
+        end
+    end
+    
+    return pets
 end
 
 -- ============================================================================
--- tryCollectViaUI()
--- Try to find and click "Collect all pets" button via GUI
+-- collectFromPet(pet)
+-- Try to collect money from a pet by touching/clicking it
 -- ============================================================================
-local function tryCollectViaUI()
-    local player = Players.LocalPlayer
-    local playerGui = player:FindFirstChild("PlayerGui")
-    if not playerGui then return false end
+local function collectFromPet(pet)
+    if not pet then return false end
     
-    -- Search for collect button in all GUIs
-    local success, result = pcall(function()
-        for _, gui in ipairs(playerGui:GetDescendants()) do
-            if gui:IsA("TextButton") or gui:IsA("ImageButton") then
-                local text = ""
-                if gui:IsA("TextButton") then
-                    text = gui.Text:lower()
-                end
-                
-                -- Check button text or name
-                local name = gui.Name:lower()
-                if string.find(text, "collect") or string.find(name, "collect") or
-                   string.find(text, "claim") or string.find(name, "claim") then
-                    -- Try to fire click
-                    if fireclickdetector then
-                        local cd = gui:FindFirstChildOfClass("ClickDetector")
-                        if cd then
-                            fireclickdetector(cd)
-                            return true
-                        end
-                    end
-                    
-                    -- Try to activate button
-                    if gui.Activated then
-                        gui.Activated:Fire()
-                        return true
-                    end
+    local player = Players.LocalPlayer
+    local character = player and player.Character
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    
+    -- Method 1: Fire ProximityPrompt
+    local success1, result1 = pcall(function()
+        for _, desc in ipairs(pet:GetDescendants()) do
+            if desc:IsA("ProximityPrompt") then
+                if fireproximityprompt then
+                    fireproximityprompt(desc)
+                    return true
                 end
             end
         end
         return false
     end)
+    if success1 and result1 then return true end
     
-    return success and result
+    -- Method 2: Fire ClickDetector
+    local success2, result2 = pcall(function()
+        for _, desc in ipairs(pet:GetDescendants()) do
+            if desc:IsA("ClickDetector") then
+                if fireclickdetector then
+                    fireclickdetector(desc)
+                    return true
+                end
+            end
+        end
+        return false
+    end)
+    if success2 and result2 then return true end
+    
+    -- Method 3: Fire touch interest on pet's parts
+    if rootPart and firetouchinterest then
+        local success3, result3 = pcall(function()
+            for _, desc in ipairs(pet:GetDescendants()) do
+                if desc:IsA("BasePart") then
+                    firetouchinterest(rootPart, desc, 0) -- Touch begin
+                    task.wait(0.05)
+                    firetouchinterest(rootPart, desc, 1) -- Touch end
+                    return true
+                end
+            end
+            return false
+        end)
+        if success3 and result3 then return true end
+    end
+    
+    -- Method 4: Try to click on pet's PrimaryPart
+    local success4, result4 = pcall(function()
+        local primary = pet.PrimaryPart or pet:FindFirstChildWhichIsA("BasePart")
+        if primary and rootPart and firetouchinterest then
+            firetouchinterest(rootPart, primary, 0)
+            task.wait(0.05)
+            firetouchinterest(rootPart, primary, 1)
+            return true
+        end
+        return false
+    end)
+    if success4 and result4 then return true end
+    
+    return false
 end
 
 -- ============================================================================
@@ -207,60 +260,66 @@ end
 -- Run a single collection cycle
 -- ============================================================================
 local function collectCycle()
-    debugLog("[AutoCollect] Running cycle...")
+    local pets = findPetsWithMoney()
+    local collected = 0
+    local failed = 0
     
-    local collected = false
+    debugLog("[AutoCollect] Found " .. #pets .. " pets with $")
     
-    -- Method 1: Try remote
-    if AutoCollect._collectRemote then
-        local success = tryCollectViaRemote(AutoCollect._collectRemote)
+    for i, pet in ipairs(pets) do
+        if not AutoCollect._active then break end
+        
+        local success = collectFromPet(pet)
         if success then
-            collected = true
-            debugLog("[AutoCollect] Collected via remote")
+            collected = collected + 1
+        else
+            failed = failed + 1
+        end
+        
+        -- Small delay between pets
+        if i < #pets and AutoCollect._active then
+            task.wait(AutoCollect._config.delayPerPet)
         end
     end
     
-    -- Method 2: Try UI button (fallback)
-    if not collected then
-        local uiSuccess = tryCollectViaUI()
-        if uiSuccess then
-            collected = true
-            debugLog("[AutoCollect] Collected via UI")
-        end
-    end
-    
-    -- Update stats
     AutoCollect._stats.cyclesCompleted = AutoCollect._stats.cyclesCompleted + 1
-    if collected then
-        AutoCollect._stats.totalCollected = AutoCollect._stats.totalCollected + 1
-    else
-        AutoCollect._stats.totalFailed = AutoCollect._stats.totalFailed + 1
-        debugLog("[AutoCollect] Cycle failed - no method worked")
+    AutoCollect._stats.totalCollected = AutoCollect._stats.totalCollected + collected
+    AutoCollect._stats.totalFailed = AutoCollect._stats.totalFailed + failed
+    
+    if #pets > 0 then
+        debugLog("[AutoCollect] Collected: " .. collected .. "/" .. #pets)
     end
 end
 
 -- ============================================================================
 -- init()
--- Initialize the auto-collect module
 -- ============================================================================
 function AutoCollect:init()
     debugLog("[AutoCollect] Initializing...")
     
-    -- Find collect remote
-    self._collectRemote = findCollectRemote()
+    -- Find player folder
+    self._playerFolder = findPlayerFolder()
     
-    if self._collectRemote then
-        debugLog("[AutoCollect] Ready - using remote: " .. self._collectRemote.Name)
-    else
-        debugLog("[AutoCollect] Ready - will try UI method")
+    -- Log workspace structure for debugging
+    local folderNames = {}
+    pcall(function()
+        for _, child in ipairs(Workspace:GetChildren()) do
+            if child:IsA("Folder") or child:IsA("Model") then
+                table.insert(folderNames, child.Name)
+            end
+        end
+    end)
+    
+    if #folderNames > 0 then
+        debugLog("[AutoCollect] Workspace folders: " .. table.concat(folderNames, ", "))
     end
     
+    debugLog("[AutoCollect] Ready")
     return true
 end
 
 -- ============================================================================
 -- start()
--- Start the auto-collection loop
 -- ============================================================================
 function AutoCollect:start()
     if self._active then
@@ -268,15 +327,9 @@ function AutoCollect:start()
         return false
     end
     
-    -- Init if not done
-    if not self._collectRemote then
-        self:init()
-    end
-    
     self._active = true
     debugLog("[AutoCollect] Started (interval: " .. self._config.cycleInterval .. "s)")
     
-    -- Spawn collection loop
     self._thread = task.spawn(function()
         while self._active do
             local success, err = pcall(collectCycle)
@@ -284,7 +337,6 @@ function AutoCollect:start()
                 debugLog("[AutoCollect] Error: " .. tostring(err))
             end
             
-            -- Wait for next cycle
             if self._active then
                 task.wait(self._config.cycleInterval)
             end
@@ -296,16 +348,13 @@ end
 
 -- ============================================================================
 -- stop()
--- Stop the auto-collection loop
 -- ============================================================================
 function AutoCollect:stop()
     debugLog("[AutoCollect] Stopping...")
     self._active = false
     
     if self._thread then
-        pcall(function()
-            task.cancel(self._thread)
-        end)
+        pcall(function() task.cancel(self._thread) end)
         self._thread = nil
     end
     
@@ -315,9 +364,7 @@ end
 -- ============================================================================
 -- Other functions
 -- ============================================================================
-function AutoCollect:isActive()
-    return self._active
-end
+function AutoCollect:isActive() return self._active end
 
 function AutoCollect:getStats()
     return {
@@ -330,6 +377,7 @@ end
 function AutoCollect:getConfig()
     return {
         cycleInterval = self._config.cycleInterval,
+        delayPerPet = self._config.delayPerPet,
     }
 end
 
@@ -344,26 +392,20 @@ end
 
 function AutoCollect:getDiscovery()
     return {
-        collectRemote = self._collectRemote,
+        playerFolder = self._playerFolder,
     }
 end
 
 function AutoCollect:runOnce()
-    if not self._collectRemote then
-        self:init()
-    end
+    self:init()
     collectCycle()
     return true
 end
 
 function AutoCollect:cleanup()
     self:stop()
-    self._stats = {
-        cyclesCompleted = 0,
-        totalCollected = 0,
-        totalFailed = 0,
-    }
-    self._collectRemote = nil
+    self._stats = { cyclesCompleted = 0, totalCollected = 0, totalFailed = 0 }
+    self._playerFolder = nil
 end
 
 -- ============================================================================
