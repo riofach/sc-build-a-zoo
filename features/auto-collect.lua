@@ -411,6 +411,39 @@ function AutoCollect:collectViaTouch(animal)
 end
 
 -- ============================================================================
+-- collectViaClick(animal)
+-- Try to collect via ClickDetector or ProximityPrompt
+-- Returns: boolean (success)
+-- ============================================================================
+function AutoCollect:collectViaClick(animal)
+    local success, result = pcall(function()
+        -- Try ClickDetector
+        for _, desc in ipairs(animal:GetDescendants()) do
+            if desc:IsA("ClickDetector") then
+                if fireclickdetector then
+                    fireclickdetector(desc)
+                    return true
+                end
+            end
+        end
+        
+        -- Try ProximityPrompt
+        for _, desc in ipairs(animal:GetDescendants()) do
+            if desc:IsA("ProximityPrompt") then
+                if fireproximityprompt then
+                    fireproximityprompt(desc)
+                    return true
+                end
+            end
+        end
+        
+        return false
+    end)
+    
+    return success and result
+end
+
+-- ============================================================================
 -- collectFromAnimal(animal)
 -- Try to collect money from a single animal
 -- Returns: boolean (success)
@@ -424,7 +457,13 @@ function AutoCollect:collectFromAnimal(animal)
     local maxRetries = self._config.maxRetries
     
     while retries < maxRetries do
-        -- Try RemoteEvent first (priority per CONTEXT.md)
+        -- Try ClickDetector/ProximityPrompt first (most common in Build A Zoo)
+        local clickSuccess = self:collectViaClick(animal)
+        if clickSuccess then
+            return true
+        end
+        
+        -- Try RemoteEvent
         local remoteSuccess = self:fireRemote(animal)
         if remoteSuccess then
             return true

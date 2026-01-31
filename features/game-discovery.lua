@@ -33,7 +33,9 @@ local ANIMAL_PATTERNS = {
     "Bear", "Wolf", "Fox", "Deer", "Rabbit", "Penguin", "Flamingo",
     "Parrot", "Eagle", "Owl", "Snake", "Crocodile", "Hippo", "Rhino",
     "Panda", "Koala", "Kangaroo", "Dolphin", "Shark", "Whale", "Turtle",
-    "Animal" -- Generic pattern
+    "Dino", "Dinosaur", "Rex", "Raptor", "Trex", "Stego", "Bronto",
+    "Cat", "Dog", "Cow", "Pig", "Chicken", "Duck", "Goat", "Sheep",
+    "Animal", "Pet", "Creature" -- Generic patterns
 }
 
 -- Discovery module
@@ -222,8 +224,34 @@ local function isMoneyReady(animal)
     
     local amount = 0
     
-    -- Pattern 1: NumberValue/IntValue child with money-related names
-    local moneyValueNames = {"Money", "Cash", "Coins", "CollectableMoney", "ReadyMoney", "Income"}
+    -- Pattern 1: BillboardGui with $ sign (most common in Build A Zoo)
+    local success1, billboardResult = pcall(function()
+        for _, child in ipairs(animal:GetDescendants()) do
+            if child:IsA("BillboardGui") then
+                for _, guiChild in ipairs(child:GetDescendants()) do
+                    if guiChild:IsA("TextLabel") and guiChild.Text then
+                        local text = guiChild.Text
+                        -- Check for money patterns like "$460", "$4/s"
+                        local moneyMatch = string.match(text, "%$(%d+)")
+                        if moneyMatch then
+                            local parsed = tonumber(moneyMatch)
+                            if parsed and parsed > 0 then
+                                return true, parsed
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return false, 0
+    end)
+    
+    if success1 and billboardResult then
+        return true, amount
+    end
+    
+    -- Pattern 2: NumberValue/IntValue child with money-related names
+    local moneyValueNames = {"Money", "Cash", "Coins", "CollectableMoney", "ReadyMoney", "Income", "Gold", "Currency"}
     for _, valueName in ipairs(moneyValueNames) do
         local success, result = pcall(function()
             local valueObj = animal:FindFirstChild(valueName)
@@ -238,8 +266,8 @@ local function isMoneyReady(animal)
         end
     end
     
-    -- Pattern 2: Attributes with money values
-    local moneyAttrs = {"Money", "CollectableMoney", "ReadyMoney", "Cash", "Coins", "Income"}
+    -- Pattern 3: Attributes with money values
+    local moneyAttrs = {"Money", "CollectableMoney", "ReadyMoney", "Cash", "Coins", "Income", "Gold", "CanCollect"}
     for _, attrName in ipairs(moneyAttrs) do
         local success, result = pcall(function()
             return animal:GetAttribute(attrName)
@@ -248,32 +276,38 @@ local function isMoneyReady(animal)
         if success and type(result) == "number" and result > 0 then
             return true, result
         end
+        if success and result == true then
+            return true, 0
+        end
     end
     
-    -- Pattern 3: BillboardGui enabled (visual money indicator)
-    local success3, hasBillboard = pcall(function()
-        for _, child in ipairs(animal:GetChildren()) do
-            if child:IsA("BillboardGui") and child.Enabled then
-                -- Check if it has money-related content
-                local label = child:FindFirstChildOfClass("TextLabel")
-                if label and label.Text and (
-                    string.find(label.Text, "$", 1, true) or
-                    string.find(label.Text, "Collect", 1, true) or
-                    string.find(label.Text, "Ready", 1, true)
-                ) then
-                    return true
+    -- Pattern 4: ClickDetector or ProximityPrompt (indicates collectible)
+    local success4, hasPrompt = pcall(function()
+        for _, desc in ipairs(animal:GetDescendants()) do
+            if desc:IsA("ClickDetector") or desc:IsA("ProximityPrompt") then
+                -- Check if prompt text mentions collect/claim
+                if desc:IsA("ProximityPrompt") then
+                    local actionText = desc.ActionText or ""
+                    local objectText = desc.ObjectText or ""
+                    if string.find(actionText:lower(), "collect") or 
+                       string.find(actionText:lower(), "claim") or
+                       string.find(objectText:lower(), "money") or
+                       string.find(objectText:lower(), "gold") then
+                        return true
+                    end
                 end
+                return true
             end
         end
         return false
     end)
     
-    if success3 and hasBillboard then
+    if success4 and hasPrompt then
         return true, amount
     end
     
-    -- Pattern 4: Part child with money indicator names
-    local indicatorNames = {"MoneyDrop", "CoinDrop", "MoneyIndicator", "CashDrop", "CollectIndicator"}
+    -- Pattern 5: Part child with money indicator names
+    local indicatorNames = {"MoneyDrop", "CoinDrop", "MoneyIndicator", "CashDrop", "CollectIndicator", "GoldDrop"}
     for _, indicatorName in ipairs(indicatorNames) do
         local success, result = pcall(function()
             local indicator = animal:FindFirstChild(indicatorName)
