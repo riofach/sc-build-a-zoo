@@ -284,15 +284,242 @@ function AutoCollect:setConfig(key, value)
     end
 end
 
--- Placeholder for collection methods (implemented in Task 2)
-function AutoCollect:collectCycle()
-    -- Will be implemented in Task 2
-    print("[AutoCollect] collectCycle placeholder - not yet implemented")
+-- ============================================================================
+-- fireRemote(animal)
+-- Try to fire the collect RemoteEvent with different argument patterns
+-- Returns: boolean (success)
+-- ============================================================================
+function AutoCollect:fireRemote(animal)
+    local remote = self._discovery and self._discovery.collectRemote
+    if not remote then
+        return false
+    end
+    
+    -- Try different argument patterns
+    local patterns = {
+        -- Pattern 1: Fire with animal instance
+        function()
+            if remote:IsA("RemoteEvent") then
+                remote:FireServer(animal)
+            else
+                remote:InvokeServer(animal)
+            end
+            return true
+        end,
+        -- Pattern 2: Fire with animal ID attribute
+        function()
+            local animalId = animal:GetAttribute("Id") or animal:GetAttribute("AnimalId")
+            if animalId then
+                if remote:IsA("RemoteEvent") then
+                    remote:FireServer(animalId)
+                else
+                    remote:InvokeServer(animalId)
+                end
+                return true
+            end
+            return false
+        end,
+        -- Pattern 3: Fire with animal name
+        function()
+            if remote:IsA("RemoteEvent") then
+                remote:FireServer(animal.Name)
+            else
+                remote:InvokeServer(animal.Name)
+            end
+            return true
+        end,
+        -- Pattern 4: Fire without arguments (collect all)
+        function()
+            if remote:IsA("RemoteEvent") then
+                remote:FireServer()
+            else
+                remote:InvokeServer()
+            end
+            return true
+        end,
+    }
+    
+    for i, tryPattern in ipairs(patterns) do
+        local success, result = pcall(tryPattern)
+        if success and result then
+            return true
+        end
+    end
+    
+    return false
 end
 
+-- ============================================================================
+-- collectViaTouch(animal)
+-- Fallback collection using firetouchinterest
+-- Returns: boolean (success)
+-- ============================================================================
+function AutoCollect:collectViaTouch(animal)
+    -- Get player character and HumanoidRootPart
+    local success, result = pcall(function()
+        local Players = game:GetService("Players")
+        local LocalPlayer = Players.LocalPlayer
+        local character = LocalPlayer.Character
+        if not character then
+            return false
+        end
+        
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if not rootPart then
+            return false
+        end
+        
+        -- Find touchable part on animal
+        local touchPart = nil
+        
+        -- Try common touchable part names
+        local touchPartNames = {"TouchPart", "HitBox", "CollectPart", "Collect", "Touch", "Handle", "Main"}
+        for _, partName in ipairs(touchPartNames) do
+            local part = animal:FindFirstChild(partName)
+            if part and part:IsA("BasePart") then
+                touchPart = part
+                break
+            end
+        end
+        
+        -- Fallback: find any BasePart in animal
+        if not touchPart then
+            for _, child in ipairs(animal:GetDescendants()) do
+                if child:IsA("BasePart") then
+                    touchPart = child
+                    break
+                end
+            end
+        end
+        
+        if not touchPart then
+            return false
+        end
+        
+        -- Fire touch interest
+        if firetouchinterest then
+            firetouchinterest(rootPart, touchPart, 0) -- Touch begin
+            task.wait(0.1)
+            firetouchinterest(rootPart, touchPart, 1) -- Touch end
+            return true
+        end
+        
+        return false
+    end)
+    
+    return success and result
+end
+
+-- ============================================================================
+-- collectFromAnimal(animal)
+-- Try to collect money from a single animal
+-- Returns: boolean (success)
+-- ============================================================================
 function AutoCollect:collectFromAnimal(animal)
-    -- Will be implemented in Task 2
+    if not animal then
+        return false
+    end
+    
+    local retries = 0
+    local maxRetries = self._config.maxRetries
+    
+    while retries < maxRetries do
+        -- Try RemoteEvent first (priority per CONTEXT.md)
+        local remoteSuccess = self:fireRemote(animal)
+        if remoteSuccess then
+            return true
+        end
+        
+        -- Fallback to firetouchinterest
+        local touchSuccess = self:collectViaTouch(animal)
+        if touchSuccess then
+            return true
+        end
+        
+        retries = retries + 1
+        if retries < maxRetries then
+            Timing.wait(0.2) -- Small delay between retries
+        end
+    end
+    
     return false
+end
+
+-- ============================================================================
+-- collectCycle()
+-- Run a single collection cycle through all animals
+-- Returns: nil
+-- ============================================================================
+function AutoCollect:collectCycle()
+    local cycleStart = tick()
+    local collected = 0
+    local failed = 0
+    
+    -- Refresh animal list each cycle
+    local animals = {}
+    local success, result = pcall(function()
+        return Discovery.findPlayerAnimals()
+    end)
+    
+    if success and result then
+        animals = result
+    else
+        warn("[AutoCollect] Failed to get animals: " .. tostring(result))
+        return
+    end
+    
+    print("[AutoCollect] Starting cycle with " .. #animals .. " animals")
+    
+    for i, animal in ipairs(animals) do
+        -- Check if still active
+        if not self._active then
+            print("[AutoCollect] Cycle interrupted - stopping")
+            break
+        end
+        
+        -- Check if money is ready
+        local ready, amount = false, 0
+        local checkSuccess, checkResult = pcall(function()
+            return Discovery.isMoneyReady(animal)
+        end)
+        
+        if checkSuccess then
+            ready, amount = checkResult, 0
+            -- Handle if isMoneyReady returns two values
+            if type(checkResult) == "boolean" then
+                ready = checkResult
+            end
+        end
+        
+        if ready then
+            -- Try to collect
+            local collectSuccess = self:collectFromAnimal(animal)
+            if collectSuccess then
+                collected = collected + 1
+            else
+                failed = failed + 1
+            end
+        end
+        
+        -- Wait between animals
+        if i < #animals and self._active then
+            Timing.wait(self._config.delayPerAnimal)
+        end
+    end
+    
+    -- Update stats
+    local cycleTime = tick() - cycleStart
+    self._stats.cyclesCompleted = self._stats.cyclesCompleted + 1
+    self._stats.totalCollected = self._stats.totalCollected + collected
+    self._stats.totalFailed = self._stats.totalFailed + failed
+    self._stats.lastCycleTime = cycleTime
+    
+    -- Log results (error warning only per CONTEXT.md)
+    if failed > 0 then
+        warn("[AutoCollect] Cycle complete - Collected: " .. collected .. ", Failed: " .. failed)
+    else
+        print("[AutoCollect] Cycle " .. self._stats.cyclesCompleted .. " complete - Collected: " .. collected .. " (took " .. string.format("%.1f", cycleTime) .. "s)")
+    end
 end
 
 -- ============================================================================
