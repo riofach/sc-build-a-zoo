@@ -1,9 +1,8 @@
 -- Build A Zoo Script - Loader
 -- Entry point for loadstring execution
--- Usage: loadstring(game:HttpGet("https://raw.githubusercontent.com/USER/REPO/main/loader.lua"))()
+-- Usage: loadstring(game:HttpGet("https://raw.githubusercontent.com/riofach/sc-build-a-zoo/main/loader.lua"))()
 
--- UPDATE THIS to your actual GitHub repository URL
-local BASE_URL = "https://raw.githubusercontent.com/USER/REPO/main/"
+local BASE_URL = "https://raw.githubusercontent.com/riofach/sc-build-a-zoo/main/"
 
 local ModuleCache = {}
 
