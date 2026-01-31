@@ -48,13 +48,17 @@ local function loadModule(path, maxRetries)
     return nil
 end
 
--- Load core modules upfront (order matters)
-print("[Loader] Loading core modules...")
-local Services = loadModule("core/services")
+-- Load and initialize core modules
+print("[Loader] Loading Build A Zoo Script...")
 
--- Placeholder for Config and Timing (Plan 02)
--- local Config = loadModule("core/config")
--- local Timing = loadModule("core/timing")
+local CoreInit = loadModule("core/init")
+local Core = nil
+
+if CoreInit and type(CoreInit) == "function" then
+    Core = CoreInit(loadModule)
+else
+    warn("[Loader] Failed to load core/init")
+end
 
 -- Lazy-load features via metatable (prevents timeout)
 local Features = setmetatable({}, {
@@ -66,13 +70,18 @@ local Features = setmetatable({}, {
     end
 })
 
--- Placeholder for UI module (Phase 4)
--- local UI = loadModule("ui/main")
+-- UI placeholder (loaded in Phase 4)
+local UI = nil
 
-print("[Loader] Build A Zoo Script loaded successfully!")
+if Core then
+    print("[Loader] Build A Zoo Script loaded successfully!")
+else
+    warn("[Loader] Build A Zoo Script loaded with errors - some features may not work")
+end
 
 return {
-    Services = Services,
+    Core = Core,
     Features = Features,
-    loadModule = loadModule -- Expose for dynamic loading
+    UI = UI,
+    loadModule = loadModule
 }
