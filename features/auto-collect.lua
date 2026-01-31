@@ -181,12 +181,28 @@ local function findPetsWithMoney()
         end
     end
     
-    -- Return models
+    -- Filter: Only return models with UUID-like names (pets) or models inside player folder
+    -- UUID pattern: 32 hex characters
+    local filteredPets = {}
     for _, item in ipairs(allModelsWithMoney) do
-        table.insert(pets, item.model)
+        local name = item.model.Name
+        -- Check if name looks like UUID (32+ hex chars)
+        if string.match(name, "^[a-f0-9]+$") and #name >= 20 then
+            table.insert(filteredPets, item.model)
+            debugLog("[AutoCollect] Pet UUID: " .. name:sub(1, 12) .. "...")
+        end
     end
     
-    return pets
+    debugLog("[AutoCollect] Filtered to " .. #filteredPets .. " actual pets")
+    
+    -- If no UUID pets found, return all (fallback)
+    if #filteredPets == 0 then
+        for _, item in ipairs(allModelsWithMoney) do
+            table.insert(filteredPets, item.model)
+        end
+    end
+    
+    return filteredPets
 end
 
 -- ============================================================================
@@ -201,56 +217,66 @@ local function collectFromPet(pet)
     local rootPart = character and character:FindFirstChild("HumanoidRootPart")
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     
-    debugLog("[AutoCollect] Trying to collect from: " .. pet.Name)
+    local petName = pet.Name
+    local shortName = #petName > 12 and petName:sub(1, 12) .. "..." or petName
+    debugLog("[AutoCollect] Collecting: " .. shortName)
     
-    -- Method 1: Fire PetRE or ResourceRE with pet info
+    -- Get pet UUID/ID
+    local petId = pet.Name -- The name itself is the UUID
+    local petIdAttr = pet:GetAttribute("Id") or pet:GetAttribute("PetId") or pet:GetAttribute("UUID") or pet:GetAttribute("id")
+    if petIdAttr then
+        petId = petIdAttr
+    end
+    
+    -- Method 1: Fire ResourceRE with specific patterns for Build A Zoo
     local success1, result1 = pcall(function()
-        local remotes = {
-            ReplicatedStorage:FindFirstChild("PetRE"),
-            ReplicatedStorage:FindFirstChild("ResourceRE"),
-        }
-        
-        -- Also search in subfolders
-        for _, child in ipairs(ReplicatedStorage:GetChildren()) do
-            if child:IsA("Folder") then
-                local petRE = child:FindFirstChild("PetRE")
-                local resRE = child:FindFirstChild("ResourceRE")
-                if petRE then table.insert(remotes, petRE) end
-                if resRE then table.insert(remotes, resRE) end
-            end
-        end
-        
-        for _, remote in ipairs(remotes) do
-            if remote and remote:IsA("RemoteEvent") then
-                -- Try different argument patterns
-                -- Pattern 1: "Collect" action with pet
-                pcall(function() remote:FireServer("Collect", pet) end)
-                pcall(function() remote:FireServer("CollectMoney", pet) end)
-                pcall(function() remote:FireServer("Claim", pet) end)
-                
-                -- Pattern 2: Just pet reference
-                pcall(function() remote:FireServer(pet) end)
-                
-                -- Pattern 3: Pet name or ID
-                pcall(function() remote:FireServer(pet.Name) end)
-                local petId = pet:GetAttribute("Id") or pet:GetAttribute("PetId") or pet:GetAttribute("UUID")
-                if petId then
-                    pcall(function() remote:FireServer(petId) end)
-                    pcall(function() remote:FireServer("Collect", petId) end)
-                end
-                
-                return true
-            end
+        local resourceRE = ReplicatedStorage:FindFirstChild("ResourceRE")
+        if resourceRE and resourceRE:IsA("RemoteEvent") then
+            -- Try various argument patterns
+            pcall(function() resourceRE:FireServer("Collect", petId) end)
+            pcall(function() resourceRE:FireServer("CollectPet", petId) end)
+            pcall(function() resourceRE:FireServer("ClaimPet", petId) end)
+            pcall(function() resourceRE:FireServer(petId, "Collect") end)
+            pcall(function() resourceRE:FireServer({petId = petId, action = "Collect"}) end)
+            pcall(function() resourceRE:FireServer({id = petId}) end)
+            return true
         end
         return false
     end)
-    if success1 and result1 then 
-        debugLog("[AutoCollect] Fired remote for: " .. pet.Name)
-        return true 
-    end
     
-    -- Method 2: Fire ProximityPrompt
+    -- Method 2: Fire PetRE with specific patterns
     local success2, result2 = pcall(function()
+        local petRE = ReplicatedStorage:FindFirstChild("PetRE")
+        if petRE and petRE:IsA("RemoteEvent") then
+            pcall(function() petRE:FireServer("Collect", petId) end)
+            pcall(function() petRE:FireServer("CollectMoney", petId) end)
+            pcall(function() petRE:FireServer("Claim", petId) end)
+            pcall(function() petRE:FireServer(petId) end)
+            pcall(function() petRE:FireServer(pet) end)
+            pcall(function() petRE:FireServer({petId = petId}) end)
+            pcall(function() petRE:FireServer("CollectAll") end)
+            return true
+        end
+        return false
+    end)
+    
+    -- Method 3: Try ALL remotes with "Collect" pattern
+    local success3, result3 = pcall(function()
+        for _, child in ipairs(ReplicatedStorage:GetDescendants()) do
+            if child:IsA("RemoteEvent") then
+                local name = child.Name:lower()
+                if string.find(name, "collect") or string.find(name, "claim") or string.find(name, "money") then
+                    pcall(function() child:FireServer(petId) end)
+                    pcall(function() child:FireServer(pet) end)
+                    debugLog("[AutoCollect] Tried: " .. child.Name)
+                end
+            end
+        end
+        return true
+    end)
+    
+    -- Method 4: Fire ProximityPrompt
+    local success4, result4 = pcall(function()
         for _, desc in ipairs(pet:GetDescendants()) do
             if desc:IsA("ProximityPrompt") then
                 if fireproximityprompt then
@@ -262,10 +288,10 @@ local function collectFromPet(pet)
         end
         return false
     end)
-    if success2 and result2 then return true end
+    if success4 and result4 then return true end
     
-    -- Method 3: Fire ClickDetector
-    local success3, result3 = pcall(function()
+    -- Method 5: Fire ClickDetector
+    local success5, result5 = pcall(function()
         for _, desc in ipairs(pet:GetDescendants()) do
             if desc:IsA("ClickDetector") then
                 if fireclickdetector then
@@ -277,11 +303,11 @@ local function collectFromPet(pet)
         end
         return false
     end)
-    if success3 and result3 then return true end
+    if success5 and result5 then return true end
     
-    -- Method 4: Fire touch interest
+    -- Method 6: Fire touch interest
     if rootPart and firetouchinterest then
-        local success4, result4 = pcall(function()
+        local success6, result6 = pcall(function()
             for _, desc in ipairs(pet:GetDescendants()) do
                 if desc:IsA("BasePart") then
                     firetouchinterest(rootPart, desc, 0)
@@ -293,10 +319,10 @@ local function collectFromPet(pet)
             end
             return false
         end)
-        if success4 and result4 then return true end
+        if success6 and result6 then return true end
     end
     
-    debugLog("[AutoCollect] All methods failed for: " .. pet.Name)
+    debugLog("[AutoCollect] All methods failed")
     return false
 end
 
