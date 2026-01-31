@@ -523,14 +523,93 @@ function AutoCollect:collectCycle()
 end
 
 -- ============================================================================
--- Module Export
+-- cleanup()
+-- Thorough cleanup - stops collection and resets all state
+-- Returns: nil
+-- ============================================================================
+function AutoCollect:cleanup()
+    print("[AutoCollect] Cleaning up...")
+    
+    -- First, stop the collection loop
+    self:stop()
+    
+    -- Reset stats to initial values
+    self._stats = {
+        cyclesCompleted = 0,
+        totalCollected = 0,
+        totalFailed = 0,
+        lastCycleTime = 0,
+    }
+    
+    -- Clear discovery data
+    self._discovery = nil
+    
+    print("[AutoCollect] Cleanup complete - all state reset")
+end
+
+-- ============================================================================
+-- getDiscovery()
+-- Get the current discovery data (for debugging)
+-- Returns: table or nil
+-- ============================================================================
+function AutoCollect:getDiscovery()
+    return self._discovery
+end
+
+-- ============================================================================
+-- runOnce()
+-- Run a single collection cycle manually (for testing)
+-- Returns: boolean (success)
+-- ============================================================================
+function AutoCollect:runOnce()
+    -- Initialize if not done
+    if not self._discovery then
+        local initSuccess = self:init()
+        if not initSuccess then
+            warn("[AutoCollect] Cannot run - initialization failed")
+            return false
+        end
+    end
+    
+    -- Temporarily set active to true for the cycle
+    local wasActive = self._active
+    self._active = true
+    
+    -- Run single cycle
+    local success, err = pcall(function()
+        self:collectCycle()
+    end)
+    
+    -- Restore previous active state
+    self._active = wasActive
+    
+    if not success then
+        warn("[AutoCollect] runOnce error: " .. tostring(err))
+        return false
+    end
+    
+    return true
+end
+
+-- ============================================================================
+-- Module Export (10 public functions)
 -- ============================================================================
 return {
+    -- Lifecycle
     init = function() return AutoCollect:init() end,
     start = function() return AutoCollect:start() end,
     stop = function() return AutoCollect:stop() end,
+    cleanup = function() return AutoCollect:cleanup() end,
+    
+    -- Status
     isActive = function() return AutoCollect:isActive() end,
     getStats = function() return AutoCollect:getStats() end,
+    
+    -- Configuration
     getConfig = function() return AutoCollect:getConfig() end,
     setConfig = function(k, v) return AutoCollect:setConfig(k, v) end,
+    
+    -- Debug/Testing
+    getDiscovery = function() return AutoCollect:getDiscovery() end,
+    runOnce = function() return AutoCollect:runOnce() end,
 }
