@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2025-01-31)
 ## Current Position
 
 Phase: 1 of 5 (Foundation & Infrastructure)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-01-31 — Completed 01-01-PLAN.md (Project Structure & Loader)
+Plan: 2 of 2 in current phase
+Status: Phase complete
+Last activity: 2026-01-31 — Completed 01-02-PLAN.md (Core Utilities)
 
-Progress: [█░░░░░░░░░] 10%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 5min
-- Total execution time: 5min
+- Total plans completed: 2
+- Average duration: 4min
+- Total execution time: 8min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-foundation | 1 | 5min | 5min |
+| 01-foundation | 2 | 8min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (5min)
-- Trend: Starting
+- Last 5 plans: 01-01 (5min), 01-02 (3min)
+- Trend: Improving
 
 *Updated after each plan completion*
 
@@ -51,6 +51,11 @@ Recent decisions affecting current work:
 - [01-01]: Use game:GetService() for security against hooking
 - [01-01]: Cache services before any yields for security
 - [01-01]: Exponential backoff (2s, 4s, 8s) for module fetch retry
+- [01-02]: Box-Muller transform for Gaussian random (human-like timing)
+- [01-02]: 20% default variance within 10-30% range (FARM-05)
+- [01-02]: Merge loading preserves new defaults when config is old
+- [01-02]: All file operations wrapped in pcall (corruption protection)
+- [01-02]: Core module aggregator pattern for clean namespace
 
 ### Pending Todos
 
@@ -63,8 +68,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-31 07:24
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-01-31 07:28
+Stopped at: Completed 01-02-PLAN.md (Phase 1 complete)
 Resume file: None
 
 ---
