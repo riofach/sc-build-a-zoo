@@ -1,119 +1,15 @@
 --[[
   features/auto-collect.lua
-  Auto-collect money from animals in Build A Zoo
+  Auto-collect money from pets in Build A Zoo
+  
+  Simplified version - directly fires "Collect all pets" remote
   
   Usage:
     local AutoCollect = require("features/auto-collect")
     AutoCollect.init()
     AutoCollect.start()  -- starts collection loop
     AutoCollect.stop()   -- stops collection loop
-    
-  Config (via setConfig):
-    cycleInterval: seconds between collection cycles (default: 60)
-    delayPerAnimal: seconds between each animal (default: 0.5)
-    maxRetries: retry attempts per animal (default: 3)
 --]]
-
--- Dependencies (loaded via pattern matching loader or direct require)
-local Discovery = nil
-local Timing = nil
-
--- Try to load dependencies
-local function loadDependencies()
-    -- Pattern 1: Direct require (if running as module)
-    local success1, result1 = pcall(function()
-        return require(script.Parent:FindFirstChild("game-discovery"))
-    end)
-    if success1 and result1 then
-        Discovery = result1
-    end
-    
-    -- Pattern 2: Global loader (if loaded via loadstring)
-    if not Discovery then
-        local success2, result2 = pcall(function()
-            -- Check if _G has loader reference
-            if _G.loadModule then
-                return _G.loadModule("features/game-discovery")
-            end
-            return nil
-        end)
-        if success2 and result2 then
-            Discovery = result2
-        end
-    end
-    
-    -- Pattern 3: Direct loadstring (standalone)
-    if not Discovery then
-        local success3, result3 = pcall(function()
-            local source = game:HttpGet("https://raw.githubusercontent.com/USER/REPO/main/features/game-discovery.lua")
-            return loadstring(source)()
-        end)
-        if success3 and result3 then
-            Discovery = result3
-        end
-    end
-    
-    -- Load Timing module similarly
-    local successT1, resultT1 = pcall(function()
-        return require(script.Parent.Parent:FindFirstChild("core"):FindFirstChild("timing"))
-    end)
-    if successT1 and resultT1 then
-        Timing = resultT1
-    end
-    
-    if not Timing then
-        local successT2, resultT2 = pcall(function()
-            if _G.loadModule then
-                return _G.loadModule("core/timing")
-            end
-            return nil
-        end)
-        if successT2 and resultT2 then
-            Timing = resultT2
-        end
-    end
-    
-    if not Timing then
-        local successT3, resultT3 = pcall(function()
-            local source = game:HttpGet("https://raw.githubusercontent.com/USER/REPO/main/core/timing.lua")
-            return loadstring(source)()
-        end)
-        if successT3 and resultT3 then
-            Timing = resultT3
-        end
-    end
-    
-    -- Fallback Timing if still nil (basic implementation)
-    if not Timing then
-        Timing = {
-            wait = function(delay)
-                task.wait(delay * (0.8 + math.random() * 0.4)) -- 20% variance
-                return delay
-            end
-        }
-    end
-    
-    return Discovery ~= nil
-end
-
--- Module State
-local AutoCollect = {
-    _active = false,
-    _thread = nil,
-    _connections = {},
-    _discovery = nil,
-    _stats = {
-        cyclesCompleted = 0,
-        totalCollected = 0,
-        totalFailed = 0,
-        lastCycleTime = 0,
-    },
-    _config = {
-        cycleInterval = 60,      -- sesuai CONTEXT.md
-        delayPerAnimal = 0.5,    -- sesuai CONTEXT.md
-        maxRetries = 3,          -- sesuai CONTEXT.md
-    },
-}
 
 -- ============================================================================
 -- Helper: Debug log to UI
@@ -128,40 +24,236 @@ local function debugLog(message)
 end
 
 -- ============================================================================
+-- Services
+-- ============================================================================
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- ============================================================================
+-- Module State
+-- ============================================================================
+local AutoCollect = {
+    _active = false,
+    _thread = nil,
+    _collectRemote = nil,
+    _stats = {
+        cyclesCompleted = 0,
+        totalCollected = 0,
+        totalFailed = 0,
+    },
+    _config = {
+        cycleInterval = 5,  -- collect every 5 seconds
+    },
+}
+
+-- ============================================================================
+-- findCollectRemote()
+-- Find the remote for collecting all pets money
+-- ============================================================================
+local function findCollectRemote()
+    debugLog("[AutoCollect] Searching for collect remote...")
+    
+    -- Common remote names for "Collect all pets" functionality
+    local remotePatterns = {
+        -- Exact matches first
+        "CollectAll", "CollectAllPets", "CollectPets", "CollectMoney",
+        "ClaimAll", "ClaimAllPets", "ClaimPets", "ClaimMoney",
+        "Collect", "Claim", "GetMoney", "GatherMoney",
+        -- Partial matches
+        "collect", "claim", "money", "pet", "gold", "cash"
+    }
+    
+    -- Search in ReplicatedStorage
+    local locations = {
+        ReplicatedStorage,
+        ReplicatedStorage:FindFirstChild("Remotes"),
+        ReplicatedStorage:FindFirstChild("Events"),
+        ReplicatedStorage:FindFirstChild("RemoteEvents"),
+        ReplicatedStorage:FindFirstChild("Network"),
+    }
+    
+    for _, location in ipairs(locations) do
+        if location then
+            local success, descendants = pcall(function()
+                return location:GetDescendants()
+            end)
+            
+            if success then
+                -- Log all remotes found
+                local remoteNames = {}
+                for _, desc in ipairs(descendants) do
+                    if desc:IsA("RemoteEvent") or desc:IsA("RemoteFunction") then
+                        table.insert(remoteNames, desc.Name)
+                    end
+                end
+                if #remoteNames > 0 then
+                    debugLog("[AutoCollect] Found remotes: " .. table.concat(remoteNames, ", "))
+                end
+                
+                -- Search for matching remote
+                for _, pattern in ipairs(remotePatterns) do
+                    for _, desc in ipairs(descendants) do
+                        if desc:IsA("RemoteEvent") or desc:IsA("RemoteFunction") then
+                            local name = desc.Name:lower()
+                            if name == pattern:lower() or string.find(name, pattern:lower()) then
+                                debugLog("[AutoCollect] Found remote: " .. desc.Name)
+                                return desc
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    debugLog("[AutoCollect] No collect remote found")
+    return nil
+end
+
+-- ============================================================================
+-- tryCollectViaRemote()
+-- Try different ways to fire the collect remote
+-- ============================================================================
+local function tryCollectViaRemote(remote)
+    if not remote then return false end
+    
+    local patterns = {
+        -- Pattern 1: No arguments
+        function()
+            if remote:IsA("RemoteEvent") then
+                remote:FireServer()
+            else
+                remote:InvokeServer()
+            end
+            return true
+        end,
+        -- Pattern 2: "All" argument
+        function()
+            if remote:IsA("RemoteEvent") then
+                remote:FireServer("All")
+            else
+                remote:InvokeServer("All")
+            end
+            return true
+        end,
+        -- Pattern 3: true argument
+        function()
+            if remote:IsA("RemoteEvent") then
+                remote:FireServer(true)
+            else
+                remote:InvokeServer(true)
+            end
+            return true
+        end,
+    }
+    
+    for i, tryPattern in ipairs(patterns) do
+        local success = pcall(tryPattern)
+        if success then
+            return true
+        end
+    end
+    
+    return false
+end
+
+-- ============================================================================
+-- tryCollectViaUI()
+-- Try to find and click "Collect all pets" button via GUI
+-- ============================================================================
+local function tryCollectViaUI()
+    local player = Players.LocalPlayer
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then return false end
+    
+    -- Search for collect button in all GUIs
+    local success, result = pcall(function()
+        for _, gui in ipairs(playerGui:GetDescendants()) do
+            if gui:IsA("TextButton") or gui:IsA("ImageButton") then
+                local text = ""
+                if gui:IsA("TextButton") then
+                    text = gui.Text:lower()
+                end
+                
+                -- Check button text or name
+                local name = gui.Name:lower()
+                if string.find(text, "collect") or string.find(name, "collect") or
+                   string.find(text, "claim") or string.find(name, "claim") then
+                    -- Try to fire click
+                    if fireclickdetector then
+                        local cd = gui:FindFirstChildOfClass("ClickDetector")
+                        if cd then
+                            fireclickdetector(cd)
+                            return true
+                        end
+                    end
+                    
+                    -- Try to activate button
+                    if gui.Activated then
+                        gui.Activated:Fire()
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end)
+    
+    return success and result
+end
+
+-- ============================================================================
+-- collectCycle()
+-- Run a single collection cycle
+-- ============================================================================
+local function collectCycle()
+    debugLog("[AutoCollect] Running cycle...")
+    
+    local collected = false
+    
+    -- Method 1: Try remote
+    if AutoCollect._collectRemote then
+        local success = tryCollectViaRemote(AutoCollect._collectRemote)
+        if success then
+            collected = true
+            debugLog("[AutoCollect] Collected via remote")
+        end
+    end
+    
+    -- Method 2: Try UI button (fallback)
+    if not collected then
+        local uiSuccess = tryCollectViaUI()
+        if uiSuccess then
+            collected = true
+            debugLog("[AutoCollect] Collected via UI")
+        end
+    end
+    
+    -- Update stats
+    AutoCollect._stats.cyclesCompleted = AutoCollect._stats.cyclesCompleted + 1
+    if collected then
+        AutoCollect._stats.totalCollected = AutoCollect._stats.totalCollected + 1
+    else
+        AutoCollect._stats.totalFailed = AutoCollect._stats.totalFailed + 1
+        debugLog("[AutoCollect] Cycle failed - no method worked")
+    end
+end
+
+-- ============================================================================
 -- init()
--- Initialize the auto-collect module by running game discovery
--- Returns: boolean (success)
+-- Initialize the auto-collect module
 -- ============================================================================
 function AutoCollect:init()
     debugLog("[AutoCollect] Initializing...")
     
-    -- Load dependencies first
-    local depsLoaded = loadDependencies()
-    if not depsLoaded then
-        debugLog("[AutoCollect] Failed to load Discovery module")
-        return false
+    -- Find collect remote
+    self._collectRemote = findCollectRemote()
+    
+    if self._collectRemote then
+        debugLog("[AutoCollect] Ready - using remote: " .. self._collectRemote.Name)
+    else
+        debugLog("[AutoCollect] Ready - will try UI method")
     end
-    
-    -- Run game structure discovery
-    local success, result = pcall(function()
-        return Discovery.discoverGameStructure()
-    end)
-    
-    if not success then
-        debugLog("[AutoCollect] Discovery failed: " .. tostring(result))
-        return false
-    end
-    
-    self._discovery = result
-    
-    -- Validate we found player folder
-    if not self._discovery.playerFolder then
-        debugLog("[AutoCollect] Player folder not found")
-        return false
-    end
-    
-    debugLog("[AutoCollect] Init OK - Animals: " .. (self._discovery.animalCount or 0))
-    debugLog("[AutoCollect] Remote: " .. (self._discovery.collectRemote and self._discovery.collectRemote.Name or "NOT FOUND"))
     
     return true
 end
@@ -169,39 +261,32 @@ end
 -- ============================================================================
 -- start()
 -- Start the auto-collection loop
--- Returns: boolean (success)
 -- ============================================================================
 function AutoCollect:start()
-    -- Guard: already active
     if self._active then
-        warn("[AutoCollect] Already running")
+        debugLog("[AutoCollect] Already running")
         return false
     end
     
-    -- Guard: init if not done
-    if not self._discovery then
-        local initSuccess = self:init()
-        if not initSuccess then
-            warn("[AutoCollect] Cannot start - initialization failed")
-            return false
-        end
+    -- Init if not done
+    if not self._collectRemote then
+        self:init()
     end
     
     self._active = true
-    print("[AutoCollect] Starting collection loop (interval: " .. self._config.cycleInterval .. "s)")
+    debugLog("[AutoCollect] Started (interval: " .. self._config.cycleInterval .. "s)")
     
-    -- Spawn collection loop thread
+    -- Spawn collection loop
     self._thread = task.spawn(function()
         while self._active do
-            local success, err = pcall(function()
-                self:collectCycle()
-            end)
+            local success, err = pcall(collectCycle)
             if not success then
-                warn("[AutoCollect] Cycle error: " .. tostring(err))
+                debugLog("[AutoCollect] Error: " .. tostring(err))
             end
-            -- Randomized wait for next cycle
+            
+            -- Wait for next cycle
             if self._active then
-                Timing.wait(self._config.cycleInterval)
+                task.wait(self._config.cycleInterval)
             end
         end
     end)
@@ -211,459 +296,88 @@ end
 
 -- ============================================================================
 -- stop()
--- Stop the auto-collection loop and clean up
--- Returns: nil
+-- Stop the auto-collection loop
 -- ============================================================================
 function AutoCollect:stop()
-    print("[AutoCollect] Stopping...")
-    
+    debugLog("[AutoCollect] Stopping...")
     self._active = false
     
-    -- Cancel thread if exists
     if self._thread then
-        local success, err = pcall(function()
+        pcall(function()
             task.cancel(self._thread)
         end)
-        if not success then
-            -- Thread may have already completed, that's ok
-        end
         self._thread = nil
     end
     
-    -- Disconnect all connections
-    for i, connection in ipairs(self._connections) do
-        local success, err = pcall(function()
-            if connection and typeof(connection) == "RBXScriptConnection" then
-                connection:Disconnect()
-            end
-        end)
-    end
-    self._connections = {}
-    
-    print("[AutoCollect] Stopped")
+    debugLog("[AutoCollect] Stopped")
 end
 
 -- ============================================================================
--- isActive()
--- Check if auto-collect is currently running
--- Returns: boolean
+-- Other functions
 -- ============================================================================
 function AutoCollect:isActive()
     return self._active
 end
 
--- ============================================================================
--- getStats()
--- Get current statistics (shallow copy)
--- Returns: table
--- ============================================================================
 function AutoCollect:getStats()
     return {
         cyclesCompleted = self._stats.cyclesCompleted,
         totalCollected = self._stats.totalCollected,
         totalFailed = self._stats.totalFailed,
-        lastCycleTime = self._stats.lastCycleTime,
     }
 end
 
--- ============================================================================
--- getConfig()
--- Get current configuration (shallow copy)
--- Returns: table
--- ============================================================================
 function AutoCollect:getConfig()
     return {
         cycleInterval = self._config.cycleInterval,
-        delayPerAnimal = self._config.delayPerAnimal,
-        maxRetries = self._config.maxRetries,
     }
 end
 
--- ============================================================================
--- setConfig(key, value)
--- Update a configuration value
--- Returns: boolean (success)
--- ============================================================================
 function AutoCollect:setConfig(key, value)
     if self._config[key] ~= nil then
         self._config[key] = value
-        print("[AutoCollect] Config updated: " .. key .. " = " .. tostring(value))
+        debugLog("[AutoCollect] Config: " .. key .. " = " .. tostring(value))
         return true
-    else
-        warn("[AutoCollect] Unknown config key: " .. tostring(key))
-        return false
     end
+    return false
 end
 
--- ============================================================================
--- fireRemote(animal)
--- Try to fire the collect RemoteEvent with different argument patterns
--- Returns: boolean (success)
--- ============================================================================
-function AutoCollect:fireRemote(animal)
-    local remote = self._discovery and self._discovery.collectRemote
-    if not remote then
-        return false
-    end
-    
-    -- Try different argument patterns
-    local patterns = {
-        -- Pattern 1: Fire with animal instance
-        function()
-            if remote:IsA("RemoteEvent") then
-                remote:FireServer(animal)
-            else
-                remote:InvokeServer(animal)
-            end
-            return true
-        end,
-        -- Pattern 2: Fire with animal ID attribute
-        function()
-            local animalId = animal:GetAttribute("Id") or animal:GetAttribute("AnimalId")
-            if animalId then
-                if remote:IsA("RemoteEvent") then
-                    remote:FireServer(animalId)
-                else
-                    remote:InvokeServer(animalId)
-                end
-                return true
-            end
-            return false
-        end,
-        -- Pattern 3: Fire with animal name
-        function()
-            if remote:IsA("RemoteEvent") then
-                remote:FireServer(animal.Name)
-            else
-                remote:InvokeServer(animal.Name)
-            end
-            return true
-        end,
-        -- Pattern 4: Fire without arguments (collect all)
-        function()
-            if remote:IsA("RemoteEvent") then
-                remote:FireServer()
-            else
-                remote:InvokeServer()
-            end
-            return true
-        end,
+function AutoCollect:getDiscovery()
+    return {
+        collectRemote = self._collectRemote,
     }
-    
-    for i, tryPattern in ipairs(patterns) do
-        local success, result = pcall(tryPattern)
-        if success and result then
-            return true
-        end
-    end
-    
-    return false
 end
 
--- ============================================================================
--- collectViaTouch(animal)
--- Fallback collection using firetouchinterest
--- Returns: boolean (success)
--- ============================================================================
-function AutoCollect:collectViaTouch(animal)
-    -- Get player character and HumanoidRootPart
-    local success, result = pcall(function()
-        local Players = game:GetService("Players")
-        local LocalPlayer = Players.LocalPlayer
-        local character = LocalPlayer.Character
-        if not character then
-            return false
-        end
-        
-        local rootPart = character:FindFirstChild("HumanoidRootPart")
-        if not rootPart then
-            return false
-        end
-        
-        -- Find touchable part on animal
-        local touchPart = nil
-        
-        -- Try common touchable part names
-        local touchPartNames = {"TouchPart", "HitBox", "CollectPart", "Collect", "Touch", "Handle", "Main"}
-        for _, partName in ipairs(touchPartNames) do
-            local part = animal:FindFirstChild(partName)
-            if part and part:IsA("BasePart") then
-                touchPart = part
-                break
-            end
-        end
-        
-        -- Fallback: find any BasePart in animal
-        if not touchPart then
-            for _, child in ipairs(animal:GetDescendants()) do
-                if child:IsA("BasePart") then
-                    touchPart = child
-                    break
-                end
-            end
-        end
-        
-        if not touchPart then
-            return false
-        end
-        
-        -- Fire touch interest
-        if firetouchinterest then
-            firetouchinterest(rootPart, touchPart, 0) -- Touch begin
-            task.wait(0.1)
-            firetouchinterest(rootPart, touchPart, 1) -- Touch end
-            return true
-        end
-        
-        return false
-    end)
-    
-    return success and result
+function AutoCollect:runOnce()
+    if not self._collectRemote then
+        self:init()
+    end
+    collectCycle()
+    return true
 end
 
--- ============================================================================
--- collectViaClick(animal)
--- Try to collect via ClickDetector or ProximityPrompt
--- Returns: boolean (success)
--- ============================================================================
-function AutoCollect:collectViaClick(animal)
-    local success, result = pcall(function()
-        -- Try ClickDetector
-        for _, desc in ipairs(animal:GetDescendants()) do
-            if desc:IsA("ClickDetector") then
-                if fireclickdetector then
-                    fireclickdetector(desc)
-                    return true
-                end
-            end
-        end
-        
-        -- Try ProximityPrompt
-        for _, desc in ipairs(animal:GetDescendants()) do
-            if desc:IsA("ProximityPrompt") then
-                if fireproximityprompt then
-                    fireproximityprompt(desc)
-                    return true
-                end
-            end
-        end
-        
-        return false
-    end)
-    
-    return success and result
-end
-
--- ============================================================================
--- collectFromAnimal(animal)
--- Try to collect money from a single animal
--- Returns: boolean (success)
--- ============================================================================
-function AutoCollect:collectFromAnimal(animal)
-    if not animal then
-        return false
-    end
-    
-    local retries = 0
-    local maxRetries = self._config.maxRetries
-    
-    while retries < maxRetries do
-        -- Try ClickDetector/ProximityPrompt first (most common in Build A Zoo)
-        local clickSuccess = self:collectViaClick(animal)
-        if clickSuccess then
-            return true
-        end
-        
-        -- Try RemoteEvent
-        local remoteSuccess = self:fireRemote(animal)
-        if remoteSuccess then
-            return true
-        end
-        
-        -- Fallback to firetouchinterest
-        local touchSuccess = self:collectViaTouch(animal)
-        if touchSuccess then
-            return true
-        end
-        
-        retries = retries + 1
-        if retries < maxRetries then
-            Timing.wait(0.2) -- Small delay between retries
-        end
-    end
-    
-    return false
-end
-
--- ============================================================================
--- collectCycle()
--- Run a single collection cycle through all animals
--- Returns: nil
--- ============================================================================
-function AutoCollect:collectCycle()
-    local cycleStart = tick()
-    local collected = 0
-    local failed = 0
-    
-    -- Refresh animal list each cycle
-    local animals = {}
-    local success, result = pcall(function()
-        return Discovery.findPlayerAnimals()
-    end)
-    
-    if success and result then
-        animals = result
-    else
-        debugLog("[AutoCollect] Failed to get animals: " .. tostring(result))
-        return
-    end
-    
-    debugLog("[AutoCollect] Cycle: " .. #animals .. " animals found")
-    
-    local readyCount = 0
-    for i, animal in ipairs(animals) do
-        -- Check if still active
-        if not self._active then
-            debugLog("[AutoCollect] Cycle interrupted")
-            break
-        end
-        
-        -- Check if money is ready
-        local ready, amount = false, 0
-        local checkSuccess, checkResult = pcall(function()
-            return Discovery.isMoneyReady(animal)
-        end)
-        
-        if checkSuccess then
-            ready, amount = checkResult, 0
-            -- Handle if isMoneyReady returns two values
-            if type(checkResult) == "boolean" then
-                ready = checkResult
-            end
-        end
-        
-        if ready then
-            readyCount = readyCount + 1
-            -- Try to collect
-            local collectSuccess = self:collectFromAnimal(animal)
-            if collectSuccess then
-                collected = collected + 1
-            else
-                failed = failed + 1
-            end
-        end
-        
-        -- Wait between animals
-        if i < #animals and self._active then
-            Timing.wait(self._config.delayPerAnimal)
-        end
-    end
-    
-    debugLog("[AutoCollect] Ready: " .. readyCount .. ", Collected: " .. collected .. ", Failed: " .. failed)
-    
-    -- Update stats
-    local cycleTime = tick() - cycleStart
-    self._stats.cyclesCompleted = self._stats.cyclesCompleted + 1
-    self._stats.totalCollected = self._stats.totalCollected + collected
-    self._stats.totalFailed = self._stats.totalFailed + failed
-    self._stats.lastCycleTime = cycleTime
-    
-    -- Log results (error warning only per CONTEXT.md)
-    if failed > 0 then
-        warn("[AutoCollect] Cycle complete - Collected: " .. collected .. ", Failed: " .. failed)
-    else
-        print("[AutoCollect] Cycle " .. self._stats.cyclesCompleted .. " complete - Collected: " .. collected .. " (took " .. string.format("%.1f", cycleTime) .. "s)")
-    end
-end
-
--- ============================================================================
--- cleanup()
--- Thorough cleanup - stops collection and resets all state
--- Returns: nil
--- ============================================================================
 function AutoCollect:cleanup()
-    print("[AutoCollect] Cleaning up...")
-    
-    -- First, stop the collection loop
     self:stop()
-    
-    -- Reset stats to initial values
     self._stats = {
         cyclesCompleted = 0,
         totalCollected = 0,
         totalFailed = 0,
-        lastCycleTime = 0,
     }
-    
-    -- Clear discovery data
-    self._discovery = nil
-    
-    print("[AutoCollect] Cleanup complete - all state reset")
+    self._collectRemote = nil
 end
 
 -- ============================================================================
--- getDiscovery()
--- Get the current discovery data (for debugging)
--- Returns: table or nil
--- ============================================================================
-function AutoCollect:getDiscovery()
-    return self._discovery
-end
-
--- ============================================================================
--- runOnce()
--- Run a single collection cycle manually (for testing)
--- Returns: boolean (success)
--- ============================================================================
-function AutoCollect:runOnce()
-    -- Initialize if not done
-    if not self._discovery then
-        local initSuccess = self:init()
-        if not initSuccess then
-            warn("[AutoCollect] Cannot run - initialization failed")
-            return false
-        end
-    end
-    
-    -- Temporarily set active to true for the cycle
-    local wasActive = self._active
-    self._active = true
-    
-    -- Run single cycle
-    local success, err = pcall(function()
-        self:collectCycle()
-    end)
-    
-    -- Restore previous active state
-    self._active = wasActive
-    
-    if not success then
-        warn("[AutoCollect] runOnce error: " .. tostring(err))
-        return false
-    end
-    
-    return true
-end
-
--- ============================================================================
--- Module Export (10 public functions)
+-- Module Export
 -- ============================================================================
 return {
-    -- Lifecycle
     init = function() return AutoCollect:init() end,
     start = function() return AutoCollect:start() end,
     stop = function() return AutoCollect:stop() end,
     cleanup = function() return AutoCollect:cleanup() end,
-    
-    -- Status
     isActive = function() return AutoCollect:isActive() end,
     getStats = function() return AutoCollect:getStats() end,
-    
-    -- Configuration
     getConfig = function() return AutoCollect:getConfig() end,
     setConfig = function(k, v) return AutoCollect:setConfig(k, v) end,
-    
-    -- Debug/Testing
     getDiscovery = function() return AutoCollect:getDiscovery() end,
     runOnce = function() return AutoCollect:runOnce() end,
 }
