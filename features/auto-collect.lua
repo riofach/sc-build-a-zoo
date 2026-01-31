@@ -207,123 +207,71 @@ end
 
 -- ============================================================================
 -- collectFromPet(pet)
--- Try to collect money from a pet by various methods
+-- Collect money by teleporting character to pet position
 -- ============================================================================
 local function collectFromPet(pet)
     if not pet then return false end
     
     local player = Players.LocalPlayer
     local character = player and player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    
+    if not rootPart then
+        debugLog("[AutoCollect] No character/rootPart")
+        return false
+    end
     
     local petName = pet.Name
     local shortName = #petName > 12 and petName:sub(1, 12) .. "..." or petName
-    debugLog("[AutoCollect] Collecting: " .. shortName)
     
-    -- Get pet UUID/ID
-    local petId = pet.Name -- The name itself is the UUID
-    local petIdAttr = pet:GetAttribute("Id") or pet:GetAttribute("PetId") or pet:GetAttribute("UUID") or pet:GetAttribute("id")
-    if petIdAttr then
-        petId = petIdAttr
+    -- Find pet's position
+    local petPosition = nil
+    
+    pcall(function()
+        -- Try PrimaryPart first
+        if pet.PrimaryPart then
+            petPosition = pet.PrimaryPart.Position
+        else
+            -- Find any BasePart in pet
+            for _, child in ipairs(pet:GetDescendants()) do
+                if child:IsA("BasePart") then
+                    petPosition = child.Position
+                    break
+                end
+            end
+        end
+    end)
+    
+    if not petPosition then
+        debugLog("[AutoCollect] Can't find pet position: " .. shortName)
+        return false
     end
     
-    -- Method 1: Fire ResourceRE with specific patterns for Build A Zoo
-    local success1, result1 = pcall(function()
-        local resourceRE = ReplicatedStorage:FindFirstChild("ResourceRE")
-        if resourceRE and resourceRE:IsA("RemoteEvent") then
-            -- Try various argument patterns
-            pcall(function() resourceRE:FireServer("Collect", petId) end)
-            pcall(function() resourceRE:FireServer("CollectPet", petId) end)
-            pcall(function() resourceRE:FireServer("ClaimPet", petId) end)
-            pcall(function() resourceRE:FireServer(petId, "Collect") end)
-            pcall(function() resourceRE:FireServer({petId = petId, action = "Collect"}) end)
-            pcall(function() resourceRE:FireServer({id = petId}) end)
-            return true
-        end
-        return false
+    -- Save original position
+    local originalPosition = rootPart.Position
+    
+    -- Teleport to pet (slightly above to avoid getting stuck)
+    local success = pcall(function()
+        rootPart.CFrame = CFrame.new(petPosition + Vector3.new(0, 3, 0))
     end)
     
-    -- Method 2: Fire PetRE with specific patterns
-    local success2, result2 = pcall(function()
-        local petRE = ReplicatedStorage:FindFirstChild("PetRE")
-        if petRE and petRE:IsA("RemoteEvent") then
-            pcall(function() petRE:FireServer("Collect", petId) end)
-            pcall(function() petRE:FireServer("CollectMoney", petId) end)
-            pcall(function() petRE:FireServer("Claim", petId) end)
-            pcall(function() petRE:FireServer(petId) end)
-            pcall(function() petRE:FireServer(pet) end)
-            pcall(function() petRE:FireServer({petId = petId}) end)
-            pcall(function() petRE:FireServer("CollectAll") end)
-            return true
-        end
-        return false
-    end)
-    
-    -- Method 3: Try ALL remotes with "Collect" pattern
-    local success3, result3 = pcall(function()
-        for _, child in ipairs(ReplicatedStorage:GetDescendants()) do
-            if child:IsA("RemoteEvent") then
-                local name = child.Name:lower()
-                if string.find(name, "collect") or string.find(name, "claim") or string.find(name, "money") then
-                    pcall(function() child:FireServer(petId) end)
-                    pcall(function() child:FireServer(pet) end)
-                    debugLog("[AutoCollect] Tried: " .. child.Name)
-                end
-            end
-        end
-        return true
-    end)
-    
-    -- Method 4: Fire ProximityPrompt
-    local success4, result4 = pcall(function()
-        for _, desc in ipairs(pet:GetDescendants()) do
-            if desc:IsA("ProximityPrompt") then
-                if fireproximityprompt then
-                    fireproximityprompt(desc)
-                    debugLog("[AutoCollect] Fired ProximityPrompt")
-                    return true
-                end
-            end
-        end
-        return false
-    end)
-    if success4 and result4 then return true end
-    
-    -- Method 5: Fire ClickDetector
-    local success5, result5 = pcall(function()
-        for _, desc in ipairs(pet:GetDescendants()) do
-            if desc:IsA("ClickDetector") then
-                if fireclickdetector then
-                    fireclickdetector(desc)
-                    debugLog("[AutoCollect] Fired ClickDetector")
-                    return true
-                end
-            end
-        end
-        return false
-    end)
-    if success5 and result5 then return true end
-    
-    -- Method 6: Fire touch interest
-    if rootPart and firetouchinterest then
-        local success6, result6 = pcall(function()
-            for _, desc in ipairs(pet:GetDescendants()) do
-                if desc:IsA("BasePart") then
-                    firetouchinterest(rootPart, desc, 0)
-                    task.wait(0.05)
-                    firetouchinterest(rootPart, desc, 1)
-                    debugLog("[AutoCollect] Fired touch on: " .. desc.Name)
-                    return true
-                end
-            end
-            return false
+    if success then
+        debugLog("[AutoCollect] Teleported to: " .. shortName)
+        
+        -- Wait a moment for collection to happen
+        task.wait(0.3)
+        
+        -- Teleport back to original position
+        pcall(function()
+            rootPart.CFrame = CFrame.new(originalPosition)
         end)
-        if success6 and result6 then return true end
+        
+        return true
+    else
+        debugLog("[AutoCollect] Teleport failed: " .. shortName)
+        return false
     end
-    
-    debugLog("[AutoCollect] All methods failed")
-    return false
 end
 
 -- ============================================================================
