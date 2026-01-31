@@ -29,11 +29,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Modular loader fetches and executes separate module files
   3. Script runs without errors on Delta Executor (mobile)
   4. Randomized timing utility produces delays with 10-30% variance
-**Plans**: TBD
+**Plans**: 2 plans (Wave 1: 01-01, Wave 2: 01-02)
 
 Plans:
-- [ ] 01-01: Project structure and loader entry point
-- [ ] 01-02: Core utilities (timing, config, services)
+- [ ] 01-01-PLAN.md — Project structure and loader entry point
+- [ ] 01-02-PLAN.md — Core utilities (timing, config, services)
 
 ### Phase 2: Auto-Collect Money
 **Goal**: Implement first auto-feature to validate architecture works with actual game
