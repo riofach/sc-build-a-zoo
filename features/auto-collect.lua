@@ -207,7 +207,8 @@ end
 
 -- ============================================================================
 -- collectFromPet(pet)
--- Collect money by teleporting character to pet position
+-- Collect money by teleporting character DIRECTLY to pet center
+-- The game uses PROXIMITY-BASED collection - must touch/overlap pet
 -- ============================================================================
 local function collectFromPet(pet)
     if not pet then return false end
@@ -225,46 +226,65 @@ local function collectFromPet(pet)
     local petName = pet.Name
     local shortName = #petName > 12 and petName:sub(1, 12) .. "..." or petName
     
-    -- Find pet's position
-    local petPosition = nil
+    -- Find pet's CENTER position using GetBoundingBox
+    local petCenter = nil
     
     pcall(function()
-        -- Try PrimaryPart first
-        if pet.PrimaryPart then
-            petPosition = pet.PrimaryPart.Position
-        else
-            -- Find any BasePart in pet
-            for _, child in ipairs(pet:GetDescendants()) do
-                if child:IsA("BasePart") then
-                    petPosition = child.Position
-                    break
-                end
-            end
-        end
+        -- Method 1: GetBoundingBox (most accurate - gives model center)
+        local cf, size = pet:GetBoundingBox()
+        petCenter = cf.Position
     end)
     
-    if not petPosition then
-        debugLog("[AutoCollect] Can't find pet position: " .. shortName)
+    -- Fallback if GetBoundingBox fails
+    if not petCenter then
+        pcall(function()
+            if pet.PrimaryPart then
+                petCenter = pet.PrimaryPart.Position
+            else
+                -- Collect all part positions and average them
+                local positions = {}
+                for _, child in ipairs(pet:GetDescendants()) do
+                    if child:IsA("BasePart") then
+                        table.insert(positions, child.Position)
+                    end
+                end
+                if #positions > 0 then
+                    local sumX, sumY, sumZ = 0, 0, 0
+                    for _, pos in ipairs(positions) do
+                        sumX = sumX + pos.X
+                        sumY = sumY + pos.Y
+                        sumZ = sumZ + pos.Z
+                    end
+                    petCenter = Vector3.new(sumX / #positions, sumY / #positions, sumZ / #positions)
+                end
+            end
+        end)
+    end
+    
+    if not petCenter then
+        debugLog("[AutoCollect] Can't find pet center: " .. shortName)
         return false
     end
     
     -- Save original position
-    local originalPosition = rootPart.Position
+    local originalCFrame = rootPart.CFrame
     
-    -- Teleport to pet (slightly above to avoid getting stuck)
+    -- STRATEGY: Teleport DIRECTLY INTO the pet (no offset)
+    -- This ensures proximity collection triggers
     local success = pcall(function()
-        rootPart.CFrame = CFrame.new(petPosition + Vector3.new(0, 3, 0))
+        -- Teleport directly to pet center at same Y level (to touch it)
+        rootPart.CFrame = CFrame.new(petCenter)
     end)
     
     if success then
-        debugLog("[AutoCollect] Teleported to: " .. shortName)
+        debugLog("[AutoCollect] Touched: " .. shortName)
         
-        -- Wait a moment for collection to happen
-        task.wait(0.3)
+        -- Wait for collection to register (longer wait)
+        task.wait(0.5)
         
         -- Teleport back to original position
         pcall(function()
-            rootPart.CFrame = CFrame.new(originalPosition)
+            rootPart.CFrame = originalCFrame
         end)
         
         return true
