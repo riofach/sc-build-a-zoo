@@ -30,6 +30,11 @@ return function(loadModule)
         Core.Config:Load()
     end
     
+    Core.Money = loadModule("core/money")
+    if not Core.Money then
+        warn("[Core] Failed to load Money")
+    end
+    
     print("[Core] Core modules initialized")
     
     return Core
