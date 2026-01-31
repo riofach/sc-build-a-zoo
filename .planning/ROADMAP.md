@@ -13,7 +13,7 @@ This roadmap delivers an end-to-end auto-farming script for Roblox's "Build A Zo
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation & Infrastructure** - Core architecture, utilities, and hosting setup
-- [ ] **Phase 2: Auto-Collect Money** - First auto-feature to validate architecture
+- [x] **Phase 2: Auto-Collect Money** - First auto-feature to validate architecture
 - [ ] **Phase 3: Egg System** - Complete egg loop (buy, place, hatch)
 - [ ] **Phase 4: User Interface** - Rayfield UI with toggles and settings
 - [ ] **Phase 5: Discord Integration** - Webhook notifications with proxy
@@ -44,11 +44,11 @@ Plans:
   2. Script auto-collects money from all ready animals
   3. Collection uses randomized timing (not instant)
   4. Money collection works repeatedly without memory leaks
-**Plans**: TBD
+**Plans**: 2 plans (Wave 1: 02-01, Wave 2: 02-02)
 
 Plans:
-- [ ] 02-01: Game discovery and RemoteEvent mapping
-- [ ] 02-02: Auto-collect money implementation
+- [x] 02-01-PLAN.md — Game discovery utilities (findPlayerAnimals, isMoneyReady, findCollectRemote)
+- [x] 02-02-PLAN.md — Auto-collect implementation (init/start/stop lifecycle, collection loop)
 
 ### Phase 3: Egg System
 **Goal**: Complete the core farming loop - buy, place, and hatch eggs automatically
@@ -108,7 +108,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Infrastructure | 2/2 | ✓ Complete | 2026-01-31 |
-| 2. Auto-Collect Money | 0/2 | Not started | - |
+| 2. Auto-Collect Money | 2/2 | ✓ Complete | 2026-01-31 |
 | 3. Egg System | 0/3 | Not started | - |
 | 4. User Interface | 0/3 | Not started | - |
 | 5. Discord Integration | 0/2 | Not started | - |

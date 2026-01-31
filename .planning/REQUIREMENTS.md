@@ -84,7 +84,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FARM-01 | Phase 2 | Pending |
+| FARM-01 | Phase 2 | Complete |
 | FARM-02 | Phase 3 | Pending |
 | FARM-03 | Phase 3 | Pending |
 | FARM-04 | Phase 3 | Pending |
