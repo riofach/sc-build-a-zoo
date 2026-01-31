@@ -88,7 +88,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FARM-02 | Phase 3 | Pending |
 | FARM-03 | Phase 3 | Pending |
 | FARM-04 | Phase 3 | Pending |
-| FARM-05 | Phase 1 | Pending |
+| FARM-05 | Phase 1 | Complete |
 | EGG-01 | Phase 3 | Pending |
 | EGG-02 | Phase 3 | Pending |
 | EGG-03 | Phase 3 | Pending |
@@ -102,10 +102,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DISC-03 | Phase 5 | Pending |
 | DISC-04 | Phase 5 | Pending |
 | DISC-05 | Phase 5 | Pending |
-| INFRA-01 | Phase 1 | Pending |
-| INFRA-02 | Phase 1 | Pending |
+| INFRA-01 | Phase 1 | Complete |
+| INFRA-02 | Phase 1 | Complete |
 | INFRA-03 | Phase 5 | Pending |
-| INFRA-04 | Phase 1 | Pending |
+| INFRA-04 | Phase 1 | Complete |
 
 **Coverage:**
 - v1 requirements: 22 total

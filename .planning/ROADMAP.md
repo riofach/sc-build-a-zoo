@@ -12,7 +12,7 @@ This roadmap delivers an end-to-end auto-farming script for Roblox's "Build A Zo
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation & Infrastructure** - Core architecture, utilities, and hosting setup
+- [x] **Phase 1: Foundation & Infrastructure** - Core architecture, utilities, and hosting setup
 - [ ] **Phase 2: Auto-Collect Money** - First auto-feature to validate architecture
 - [ ] **Phase 3: Egg System** - Complete egg loop (buy, place, hatch)
 - [ ] **Phase 4: User Interface** - Rayfield UI with toggles and settings
@@ -32,8 +32,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans (Wave 1: 01-01, Wave 2: 01-02)
 
 Plans:
-- [ ] 01-01-PLAN.md — Project structure and loader entry point
-- [ ] 01-02-PLAN.md — Core utilities (timing, config, services)
+- [x] 01-01-PLAN.md — Project structure and loader entry point
+- [x] 01-02-PLAN.md — Core utilities (timing, config, services)
 
 ### Phase 2: Auto-Collect Money
 **Goal**: Implement first auto-feature to validate architecture works with actual game
@@ -107,7 +107,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Infrastructure | 0/2 | Not started | - |
+| 1. Foundation & Infrastructure | 2/2 | ✓ Complete | 2026-01-31 |
 | 2. Auto-Collect Money | 0/2 | Not started | - |
 | 3. Egg System | 0/3 | Not started | - |
 | 4. User Interface | 0/3 | Not started | - |
