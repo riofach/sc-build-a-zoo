@@ -122,136 +122,71 @@ local function findPetsWithMoney()
     
     -- Blacklist names that are NOT pets
     local blacklist = {
-        ["Status"] = true,
-        ["GUI"] = true,
-        ["HUD"] = true,
-        ["UI"] = true,
-        ["Camera"] = true,
-        ["Terrain"] = true,
+        ["Status"] = true, ["GUI"] = true, ["HUD"] = true, ["UI"] = true,
+        ["Camera"] = true, ["Terrain"] = true, ["Baseplate"] = true,
+        ["SpawnLocation"] = true, ["Part"] = true,
     }
     
-    local allModels = {}
+    -- AGGRESSIVE: Scan ENTIRE Workspace for models with $ indicator
+    debugLog("[AutoCollect] Scanning entire Workspace...")
     
-    -- Method 1: Search in player folder descendants - look for pet-like models
-    if AutoCollect._playerFolder then
-        local success, descendants = pcall(function()
-            return AutoCollect._playerFolder:GetDescendants()
-        end)
-        if success then
-            for _, desc in ipairs(descendants) do
-                if desc:IsA("Model") and not blacklist[desc.Name] then
-                    -- Check if it looks like a pet (has Humanoid or PrimaryPart or is small model)
-                    local isPet = false
-                    pcall(function()
-                        -- Pets usually have a Humanoid or are small models with parts
-                        local humanoid = desc:FindFirstChildOfClass("Humanoid")
-                        local hasParts = #desc:GetChildren() > 0
-                        local hasPetAttr = desc:GetAttribute("PetId") or desc:GetAttribute("Id") or desc:GetAttribute("PetType")
-                        isPet = humanoid ~= nil or hasPetAttr ~= nil or hasParts
-                    end)
-                    if isPet then
-                        table.insert(allModels, desc)
-                    end
-                end
-            end
-        end
-        debugLog("[AutoCollect] Player folder pet models: " .. #allModels)
+    local allModelsWithMoney = {}
+    
+    local success, descendants = pcall(function()
+        return Workspace:GetDescendants()
+    end)
+    
+    if not success then
+        debugLog("[AutoCollect] Failed to scan Workspace")
+        return pets
     end
     
-    -- Method 2: Search in Pets folder (this is the primary location for pets)
-    local petsFolder = Workspace:FindFirstChild("Pets")
-    if petsFolder then
-        -- Check player subfolder in Pets
-        local playerPets = petsFolder:FindFirstChild(player.Name)
-        if playerPets then
-            local success, children = pcall(function()
-                return playerPets:GetChildren()
-            end)
-            if success then
-                for _, child in ipairs(children) do
-                    if child:IsA("Model") then
-                        table.insert(allModels, child)
-                    end
-                end
-            end
-            debugLog("[AutoCollect] Pets/" .. player.Name .. ": " .. #allModels .. " models")
-        end
-        
-        -- Also check player's UserId folder
-        local playerIdPets = petsFolder:FindFirstChild(tostring(player.UserId))
-        if playerIdPets then
-            local success, children = pcall(function()
-                return playerIdPets:GetChildren()
-            end)
-            if success then
-                for _, child in ipairs(children) do
-                    if child:IsA("Model") then
-                        table.insert(allModels, child)
-                    end
-                end
-            end
-            debugLog("[AutoCollect] Pets/" .. player.UserId .. ": found")
-        end
-    end
-    
-    debugLog("[AutoCollect] Total models to check: " .. #allModels)
-    
-    -- Log model names for debugging
-    if #allModels > 0 and #allModels <= 5 then
-        local names = {}
-        for _, m in ipairs(allModels) do
-            table.insert(names, m.Name)
-        end
-        debugLog("[AutoCollect] Models: " .. table.concat(names, ", "))
-    end
-    
-    -- Check each model for COLLECTIBLE money (not just rate)
-    for _, model in ipairs(allModels) do
-        local collectibleMoney = 0
-        
-        -- Check BillboardGui for $ text - look for collectible amount (not rate like $4/s)
-        pcall(function()
-            for _, desc in ipairs(model:GetDescendants()) do
-                if desc:IsA("TextLabel") then
-                    local text = desc.Text or ""
-                    -- Match $XXX but NOT $X/s (rate)
-                    -- $604, $76 = collectible
-                    -- $4/s = rate (skip)
-                    if string.find(text, "%$%d+$") or (string.find(text, "%$%d") and not string.find(text, "/s")) then
-                        local amount = string.match(text, "%$(%d+)")
+    -- Find all models that have TextLabel with $ in them
+    for _, desc in ipairs(descendants) do
+        if desc:IsA("Model") and not blacklist[desc.Name] then
+            local moneyAmount = 0
+            
+            pcall(function()
+                for _, child in ipairs(desc:GetDescendants()) do
+                    if child:IsA("TextLabel") and child.Visible ~= false then
+                        local text = child.Text or ""
+                        -- Look for $XXX pattern (collectible money)
+                        local amount = string.match(text, "^%$(%d+)$") -- Exact match like "$604"
+                        if not amount then
+                            amount = string.match(text, "^%$(%d+)%s") -- "$604 " with space after
+                        end
                         if amount then
                             local num = tonumber(amount)
-                            if num and num > 10 then -- Only count if > $10 (skip small rates)
-                                collectibleMoney = num
+                            if num and num > 0 then
+                                moneyAmount = num
                                 return
                             end
                         end
                     end
                 end
+            end)
+            
+            if moneyAmount > 0 then
+                table.insert(allModelsWithMoney, {model = desc, money = moneyAmount})
             end
-        end)
-        
-        if collectibleMoney > 0 then
-            table.insert(pets, {model = model, money = collectibleMoney})
-            debugLog("[AutoCollect] Pet " .. model.Name .. " has $" .. collectibleMoney)
         end
     end
     
-    debugLog("[AutoCollect] Pets with collectible $: " .. #pets)
+    debugLog("[AutoCollect] Found " .. #allModelsWithMoney .. " models with $")
     
-    -- Convert to just models for return
-    local result = {}
-    for _, pet in ipairs(pets) do
-        table.insert(result, pet.model)
+    -- Log what we found
+    for i, item in ipairs(allModelsWithMoney) do
+        if i <= 5 then -- Only log first 5
+            debugLog("[AutoCollect] -> " .. item.model.Name .. " = $" .. item.money)
+        end
     end
     
-    -- Fallback: if no $ detected but we have models, try them all
-    if #result == 0 and #allModels > 0 then
-        debugLog("[AutoCollect] No collectible $ found, trying all " .. #allModels .. " models")
-        return allModels
+    -- Return models
+    for _, item in ipairs(allModelsWithMoney) do
+        table.insert(pets, item.model)
     end
     
-    return result
+    return pets
 end
 
 -- ============================================================================
