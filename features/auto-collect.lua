@@ -120,65 +120,104 @@ local function findPetsWithMoney()
     local player = Players.LocalPlayer
     if not player then return pets end
     
-    -- Search in player folder first
+    -- Search locations
     local searchLocations = {}
     
+    -- Add player folder
     if AutoCollect._playerFolder then
         table.insert(searchLocations, AutoCollect._playerFolder)
     end
     
-    -- Also search common pet locations
-    local commonPetFolders = {
-        Workspace:FindFirstChild("Pets"),
-        Workspace:FindFirstChild("Animals"),
-        Workspace:FindFirstChild("PlayerPets"),
-    }
-    
-    for _, folder in ipairs(commonPetFolders) do
-        if folder then
-            table.insert(searchLocations, folder)
+    -- Add Pets folder (from log: there's a "Pets" folder in Workspace)
+    local petsFolder = Workspace:FindFirstChild("Pets")
+    if petsFolder then
+        table.insert(searchLocations, petsFolder)
+        
+        -- Also check player subfolder in Pets
+        local playerPetsFolder = petsFolder:FindFirstChild(player.Name)
+        if playerPetsFolder then
+            table.insert(searchLocations, playerPetsFolder)
+            debugLog("[AutoCollect] Found Pets/" .. player.Name)
         end
     end
     
-    -- If no specific folders, search entire Workspace (slower)
-    if #searchLocations == 0 then
-        table.insert(searchLocations, Workspace)
-    end
+    -- Debug: Log what we're searching
+    debugLog("[AutoCollect] Searching " .. #searchLocations .. " locations")
+    
+    local allModels = {}
     
     for _, location in ipairs(searchLocations) do
-        local success, descendants = pcall(function()
-            return location:GetDescendants()
+        local success, children = pcall(function()
+            return location:GetChildren()
         end)
         
         if success then
-            for _, desc in ipairs(descendants) do
-                -- Check if it's a Model (pet)
-                if desc:IsA("Model") then
-                    -- Check for money indicator (BillboardGui with $ text)
-                    local hasMoney = false
-                    
-                    pcall(function()
-                        for _, child in ipairs(desc:GetDescendants()) do
-                            if child:IsA("BillboardGui") then
-                                for _, guiChild in ipairs(child:GetDescendants()) do
-                                    if guiChild:IsA("TextLabel") and guiChild.Visible then
-                                        local text = guiChild.Text or ""
-                                        if string.find(text, "$") then
-                                            hasMoney = true
-                                            return
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end)
-                    
-                    if hasMoney then
-                        table.insert(pets, desc)
-                    end
+            for _, child in ipairs(children) do
+                if child:IsA("Model") then
+                    table.insert(allModels, child)
                 end
             end
         end
+    end
+    
+    debugLog("[AutoCollect] Found " .. #allModels .. " models total")
+    
+    -- Check each model for money
+    for _, model in ipairs(allModels) do
+        local hasMoney = false
+        local moneyText = ""
+        
+        -- Method 1: Check BillboardGui for $ text
+        pcall(function()
+            for _, desc in ipairs(model:GetDescendants()) do
+                if desc:IsA("BillboardGui") then
+                    for _, guiChild in ipairs(desc:GetDescendants()) do
+                        if guiChild:IsA("TextLabel") then
+                            local text = guiChild.Text or ""
+                            if string.find(text, "%$%d") then -- $460, $4/s, etc
+                                hasMoney = true
+                                moneyText = text
+                                return
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+        
+        -- Method 2: Check for "Money" or "Gold" attribute/value
+        if not hasMoney then
+            pcall(function()
+                local moneyVal = model:FindFirstChild("Money") or model:FindFirstChild("Gold") or model:FindFirstChild("Cash")
+                if moneyVal and moneyVal:IsA("NumberValue") or moneyVal:IsA("IntValue") then
+                    if moneyVal.Value > 0 then
+                        hasMoney = true
+                        moneyText = "$" .. moneyVal.Value
+                    end
+                end
+            end)
+        end
+        
+        -- Method 3: Check attributes
+        if not hasMoney then
+            pcall(function()
+                local money = model:GetAttribute("Money") or model:GetAttribute("Gold") or model:GetAttribute("CollectableMoney")
+                if money and type(money) == "number" and money > 0 then
+                    hasMoney = true
+                    moneyText = "$" .. money
+                end
+            end)
+        end
+        
+        if hasMoney then
+            table.insert(pets, model)
+        end
+    end
+    
+    -- If no pets found with money indicator, try to collect ALL pets (brute force)
+    if #pets == 0 and #allModels > 0 then
+        debugLog("[AutoCollect] No $ found, trying all " .. #allModels .. " models")
+        pets = allModels
     end
     
     return pets
