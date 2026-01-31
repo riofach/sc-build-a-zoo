@@ -77,12 +77,12 @@ Plans:
   3. UI can be minimized to not block gameplay
   4. Settings persist across script sessions
   5. Stats dashboard shows eggs hatched, money collected, etc.
-**Plans**: TBD
+**Plans**: 3 plans (Wave 1: 04-01, 04-02 | Wave 2: 04-03)
 
 Plans:
-- [ ] 04-01: Rayfield UI setup and main window
-- [ ] 04-02: Feature toggles and settings persistence
-- [ ] 04-03: Stats dashboard
+- [ ] 04-01-PLAN.md — Stats tracker module untuk session statistics
+- [ ] 04-02-PLAN.md — Rayfield UI dengan 5 tabs dan semua elements
+- [ ] 04-03-PLAN.md — Integration dengan loader dan verification
 
 ### Phase 5: Discord Integration
 **Goal**: Send notifications to user's Discord via webhook
