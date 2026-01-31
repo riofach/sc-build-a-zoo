@@ -85,13 +85,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | FARM-01 | Phase 2 | Complete |
-| FARM-02 | Phase 3 | Pending |
-| FARM-03 | Phase 3 | Pending |
-| FARM-04 | Phase 3 | Pending |
+| FARM-02 | Phase 3 | Complete |
+| FARM-03 | Phase 3 | Complete |
+| FARM-04 | Phase 3 | Complete |
 | FARM-05 | Phase 1 | Complete |
-| EGG-01 | Phase 3 | Pending |
-| EGG-02 | Phase 3 | Pending |
-| EGG-03 | Phase 3 | Pending |
+| EGG-01 | Phase 3 | Complete |
+| EGG-02 | Phase 3 | Complete |
+| EGG-03 | Phase 3 | Complete |
 | UI-01 | Phase 4 | Pending |
 | UI-02 | Phase 4 | Pending |
 | UI-03 | Phase 4 | Pending |

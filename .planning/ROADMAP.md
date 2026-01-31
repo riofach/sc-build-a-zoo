@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation & Infrastructure** - Core architecture, utilities, and hosting setup
 - [x] **Phase 2: Auto-Collect Money** - First auto-feature to validate architecture
-- [ ] **Phase 3: Egg System** - Complete egg loop (buy, place, hatch)
+- [x] **Phase 3: Egg System** - Complete egg loop (buy, place, hatch)
 - [ ] **Phase 4: User Interface** - Rayfield UI with toggles and settings
 - [ ] **Phase 5: Discord Integration** - Webhook notifications with proxy
 
@@ -60,12 +60,12 @@ Plans:
   3. Script auto-detects empty plots and places eggs there
   4. Script auto-hatches eggs when they're ready
   5. Egg types are stored in config file (easy to update for new mutations)
-**Plans**: TBD
+**Plans**: 3 plans (Wave 1: 03-01, Wave 2: 03-02, Wave 3: 03-03)
 
 Plans:
-- [ ] 03-01: Egg config and mutation types
-- [ ] 03-02: Auto-buy egg implementation
-- [ ] 03-03: Auto-place and auto-hatch implementation
+- [x] 03-01-PLAN.md — Egg types config dan money detection utility
+- [x] 03-02-PLAN.md — Conveyor monitor dan auto-buy implementation
+- [x] 03-03-PLAN.md — Plot manager, egg hatcher, dan egg system orchestrator
 
 ### Phase 4: User Interface
 **Goal**: Provide mobile-friendly controls for all auto-farm features
@@ -109,7 +109,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Foundation & Infrastructure | 2/2 | ✓ Complete | 2026-01-31 |
 | 2. Auto-Collect Money | 2/2 | ✓ Complete | 2026-01-31 |
-| 3. Egg System | 0/3 | Not started | - |
+| 3. Egg System | 3/3 | ✓ Complete | 2026-01-31 |
 | 4. User Interface | 0/3 | Not started | - |
 | 5. Discord Integration | 0/2 | Not started | - |
 
