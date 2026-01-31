@@ -120,44 +120,52 @@ local function findPetsWithMoney()
     local player = Players.LocalPlayer
     if not player then return pets end
     
+    -- Blacklist names that are NOT pets
+    local blacklist = {
+        ["Status"] = true,
+        ["GUI"] = true,
+        ["HUD"] = true,
+        ["UI"] = true,
+        ["Camera"] = true,
+        ["Terrain"] = true,
+    }
+    
     local allModels = {}
     
-    -- Method 1: Search in player folder and its descendants
+    -- Method 1: Search in player folder descendants - look for pet-like models
     if AutoCollect._playerFolder then
         local success, descendants = pcall(function()
             return AutoCollect._playerFolder:GetDescendants()
         end)
         if success then
             for _, desc in ipairs(descendants) do
-                if desc:IsA("Model") then
-                    table.insert(allModels, desc)
-                end
-            end
-        end
-        debugLog("[AutoCollect] Player folder models: " .. #allModels)
-    end
-    
-    -- Method 2: Search in Pets folder
-    local petsFolder = Workspace:FindFirstChild("Pets")
-    if petsFolder then
-        -- Check player subfolder
-        local playerPets = petsFolder:FindFirstChild(player.Name)
-        if playerPets then
-            local success, descendants = pcall(function()
-                return playerPets:GetDescendants()
-            end)
-            if success then
-                for _, desc in ipairs(descendants) do
-                    if desc:IsA("Model") then
+                if desc:IsA("Model") and not blacklist[desc.Name] then
+                    -- Check if it looks like a pet (has Humanoid or PrimaryPart or is small model)
+                    local isPet = false
+                    pcall(function()
+                        -- Pets usually have a Humanoid or are small models with parts
+                        local humanoid = desc:FindFirstChildOfClass("Humanoid")
+                        local hasParts = #desc:GetChildren() > 0
+                        local hasPetAttr = desc:GetAttribute("PetId") or desc:GetAttribute("Id") or desc:GetAttribute("PetType")
+                        isPet = humanoid ~= nil or hasPetAttr ~= nil or hasParts
+                    end)
+                    if isPet then
                         table.insert(allModels, desc)
                     end
                 end
             end
-            debugLog("[AutoCollect] Pets/" .. player.Name .. " models: " .. #allModels)
-        else
-            -- Search all in Pets folder
+        end
+        debugLog("[AutoCollect] Player folder pet models: " .. #allModels)
+    end
+    
+    -- Method 2: Search in Pets folder (this is the primary location for pets)
+    local petsFolder = Workspace:FindFirstChild("Pets")
+    if petsFolder then
+        -- Check player subfolder in Pets
+        local playerPets = petsFolder:FindFirstChild(player.Name)
+        if playerPets then
             local success, children = pcall(function()
-                return petsFolder:GetChildren()
+                return playerPets:GetChildren()
             end)
             if success then
                 for _, child in ipairs(children) do
@@ -166,73 +174,84 @@ local function findPetsWithMoney()
                     end
                 end
             end
+            debugLog("[AutoCollect] Pets/" .. player.Name .. ": " .. #allModels .. " models")
         end
-    end
-    
-    -- Method 3: If still no models, search ENTIRE Workspace for models with BillboardGui containing $
-    if #allModels == 0 then
-        debugLog("[AutoCollect] No models in expected locations, scanning Workspace...")
         
-        local success, descendants = pcall(function()
-            return Workspace:GetDescendants()
-        end)
-        
-        if success then
-            for _, desc in ipairs(descendants) do
-                if desc:IsA("Model") and desc.Parent and desc.Parent.Parent then
-                    -- Check if this model has a BillboardGui with $ text
-                    local hasBillboard = false
-                    pcall(function()
-                        for _, child in ipairs(desc:GetChildren()) do
-                            if child:IsA("BillboardGui") then
-                                hasBillboard = true
-                                return
-                            end
-                        end
-                    end)
-                    
-                    if hasBillboard then
-                        table.insert(allModels, desc)
+        -- Also check player's UserId folder
+        local playerIdPets = petsFolder:FindFirstChild(tostring(player.UserId))
+        if playerIdPets then
+            local success, children = pcall(function()
+                return playerIdPets:GetChildren()
+            end)
+            if success then
+                for _, child in ipairs(children) do
+                    if child:IsA("Model") then
+                        table.insert(allModels, child)
                     end
                 end
             end
+            debugLog("[AutoCollect] Pets/" .. player.UserId .. ": found")
         end
-        debugLog("[AutoCollect] Found " .. #allModels .. " models with BillboardGui")
     end
     
     debugLog("[AutoCollect] Total models to check: " .. #allModels)
     
-    -- Check each model for money indicator
+    -- Log model names for debugging
+    if #allModels > 0 and #allModels <= 5 then
+        local names = {}
+        for _, m in ipairs(allModels) do
+            table.insert(names, m.Name)
+        end
+        debugLog("[AutoCollect] Models: " .. table.concat(names, ", "))
+    end
+    
+    -- Check each model for COLLECTIBLE money (not just rate)
     for _, model in ipairs(allModels) do
-        local hasMoney = false
+        local collectibleMoney = 0
         
-        -- Check BillboardGui for $ text
+        -- Check BillboardGui for $ text - look for collectible amount (not rate like $4/s)
         pcall(function()
             for _, desc in ipairs(model:GetDescendants()) do
                 if desc:IsA("TextLabel") then
                     local text = desc.Text or ""
-                    if string.find(text, "%$%d") then -- $76, $4/s, etc
-                        hasMoney = true
-                        return
+                    -- Match $XXX but NOT $X/s (rate)
+                    -- $604, $76 = collectible
+                    -- $4/s = rate (skip)
+                    if string.find(text, "%$%d+$") or (string.find(text, "%$%d") and not string.find(text, "/s")) then
+                        local amount = string.match(text, "%$(%d+)")
+                        if amount then
+                            local num = tonumber(amount)
+                            if num and num > 10 then -- Only count if > $10 (skip small rates)
+                                collectibleMoney = num
+                                return
+                            end
+                        end
                     end
                 end
             end
         end)
         
-        if hasMoney then
-            table.insert(pets, model)
+        if collectibleMoney > 0 then
+            table.insert(pets, {model = model, money = collectibleMoney})
+            debugLog("[AutoCollect] Pet " .. model.Name .. " has $" .. collectibleMoney)
         end
     end
     
-    debugLog("[AutoCollect] Pets with $: " .. #pets)
+    debugLog("[AutoCollect] Pets with collectible $: " .. #pets)
+    
+    -- Convert to just models for return
+    local result = {}
+    for _, pet in ipairs(pets) do
+        table.insert(result, pet.model)
+    end
     
     -- Fallback: if no $ detected but we have models, try them all
-    if #pets == 0 and #allModels > 0 then
-        debugLog("[AutoCollect] Trying all " .. #allModels .. " models")
+    if #result == 0 and #allModels > 0 then
+        debugLog("[AutoCollect] No collectible $ found, trying all " .. #allModels .. " models")
         return allModels
     end
     
-    return pets
+    return result
 end
 
 -- ============================================================================
