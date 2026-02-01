@@ -24,7 +24,7 @@ local AutoCollect = {
     _config = { cycleInterval = 3, delayPerPet = 0.5 },
 }
 
--- Find player's zoo folder
+-- Find player's zoo folder AND pets subfolder
 local function findPlayerZooFolder()
     local player = Players.LocalPlayer
     if not player then return nil end
@@ -34,38 +34,67 @@ local function findPlayerZooFolder()
     
     debugLog("[AutoCollect] Looking for: " .. playerName)
     
+    -- Find player's main folder first
+    local playerFolder = nil
+    
     -- Direct paths
-    local direct = Workspace:FindFirstChild(playerName) or Workspace:FindFirstChild(userId)
-    if direct then
-        debugLog("[AutoCollect] Found: " .. direct:GetFullName())
-        return direct
-    end
+    playerFolder = Workspace:FindFirstChild(playerName) or Workspace:FindFirstChild(userId)
     
     -- Container folders
-    for _, name in ipairs({"Zoos", "PlayerZoos", "Players", "PlayerAreas", "Islands"}) do
-        local container = Workspace:FindFirstChild(name)
-        if container then
-            local folder = container:FindFirstChild(playerName) or container:FindFirstChild(userId)
-            if folder then
-                debugLog("[AutoCollect] Found: " .. folder:GetFullName())
-                return folder
+    if not playerFolder then
+        for _, name in ipairs({"Zoos", "PlayerZoos", "Players", "PlayerAreas", "Islands"}) do
+            local container = Workspace:FindFirstChild(name)
+            if container then
+                playerFolder = container:FindFirstChild(playerName) or container:FindFirstChild(userId)
+                if playerFolder then break end
             end
         end
     end
     
     -- Nested search
-    for _, child in ipairs(Workspace:GetChildren()) do
-        if child:IsA("Folder") or child:IsA("Model") then
-            local found = child:FindFirstChild(playerName)
-            if found then
-                debugLog("[AutoCollect] Found: " .. found:GetFullName())
-                return found
+    if not playerFolder then
+        for _, child in ipairs(Workspace:GetChildren()) do
+            if child:IsA("Folder") or child:IsA("Model") then
+                local found = child:FindFirstChild(playerName)
+                if found then
+                    playerFolder = found
+                    break
+                end
             end
         end
     end
     
-    debugLog("[AutoCollect] Player folder NOT FOUND")
-    return nil
+    if not playerFolder then
+        debugLog("[AutoCollect] Player folder NOT FOUND")
+        return nil
+    end
+    
+    debugLog("[AutoCollect] Found: " .. playerFolder:GetFullName())
+    
+    -- Debug: List children of player folder
+    local childNames = {}
+    pcall(function()
+        for _, child in ipairs(playerFolder:GetChildren()) do
+            table.insert(childNames, child.Name .. "(" .. child.ClassName .. ")")
+        end
+    end)
+    if #childNames > 0 then
+        debugLog("[AutoCollect] Children: " .. table.concat(childNames, ", "):sub(1, 80))
+    end
+    
+    -- Try to find Pets subfolder
+    local petsFolder = playerFolder:FindFirstChild("Pets") 
+        or playerFolder:FindFirstChild("PlacedPets")
+        or playerFolder:FindFirstChild("pets")
+        or playerFolder:FindFirstChild("Zoo")
+    
+    if petsFolder then
+        debugLog("[AutoCollect] Pets folder: " .. petsFolder.Name)
+        return petsFolder
+    end
+    
+    -- Return main folder if no pets subfolder
+    return playerFolder
 end
 
 -- Check if model is a valid pet (UUID name + has $XXX)
@@ -79,12 +108,13 @@ local function isValidPetModel(model)
         return false, 0
     end
     
-    -- Check for $XXX (not $X/s)
+    -- Check for $XXX (not $X/s which is income rate)
     local moneyAmount = 0
     pcall(function()
         for _, child in ipairs(model:GetDescendants()) do
             if child:IsA("TextLabel") and child.Visible ~= false then
                 local text = child.Text or ""
+                -- Match "$123" or "$1,234" but NOT "$4/s"
                 local amount = string.match(text, "^%$([%d,]+)$")
                 if amount then
                     amount = string.gsub(amount, ",", "")
@@ -147,7 +177,9 @@ local function findPetsWithMoney()
     debugLog("[AutoCollect] Found " .. #pets .. " pets")
     for i, item in ipairs(pets) do
         if i <= 3 then
+            local path = item.model:GetFullName():sub(1, 50)
             debugLog("[AutoCollect] -> " .. item.model.Name:sub(1,8) .. "... $" .. item.money)
+            debugLog("[AutoCollect]    Path: " .. path)
         end
     end
     
